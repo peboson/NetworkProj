@@ -6,14 +6,18 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netdb.h>
 
 #include "tcpudp.h"
 
 int sock;
 char buf[BUF_LEN];
 struct sockaddr_in tcpd_name;
+struct sockaddr_in troll_name;
 socklen_t tcpd_name_len;
 char roleport[MAX_PATH];
+
+struct hostent *troll_hp; /* server host */
 
 void tcpd_SOCKET(struct sockaddr_in front_addr,socklen_t front_addr_len);
 void tcpd_BIND(struct sockaddr_in front_addr,socklen_t front_addr_len);
@@ -58,6 +62,21 @@ int main(int argc, char *argv[]) /* server program called with no argument */
         perror("error getting sock name");
         exit(3);
     }
+
+
+#ifdef __WITH_TROLL
+    /* fetch server host via host name */
+    troll_hp = gethostbyname("localhost");
+    if(troll_hp == 0) {
+        fprintf(stderr, "unknown host: localhost\n");
+        exit(2);
+    }
+    /* construct name of socket to send to */
+    bcopy((void *)troll_hp->h_addr, (void *)&troll_name.sin_addr, troll_hp->h_length);
+    troll_name.sin_family = AF_INET;
+    troll_name.sin_port = htons(atoi(TROLL_PORT));
+#endif
+
     printf("Server waiting on port # %d\n", ntohs(tcpd_name.sin_port));
 
     while(1){
@@ -352,11 +371,22 @@ void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len){
         exit(4);
     }
 
+#ifdef __WITH_TROLL
+    struct troll_message_t troll_message;
+    troll_message.header=peer_addr;
+    bcopy(buf,troll_message.body,len);
+    ssize_t ret_send=sendto(sockfd, (void *)&troll_message, sizeof(troll_message), MSG_WAITALL, (struct sockaddr *)&troll_name, sizeof(troll_name));
+    if(ret_send < 0) {
+        perror("error sending buffer to troll");
+        exit(5);
+    }
+#else
     ssize_t ret_send=sendto(sockfd, buf, len, MSG_WAITALL, (struct sockaddr *)&peer_addr, sizeof(peer_addr));
     if(ret_send < 0) {
         perror("error sending buffer");
         exit(5);
     }
+#endif
 
     printf("SEND return %zd\n",ret_send);
     
