@@ -1,4 +1,8 @@
-/* Example: server.c receiving and sending datagrams on system generated port in UDP */
+/* File: tcpd.c
+ * Author: Jason Song.988
+ * Description: CSE5462 Lab3
+ *     The deamon process running behind TCP programs to wrap UDP as TCP
+ */
 #include <stdio.h>
 #include <strings.h>
 #include <string.h>
@@ -7,17 +11,18 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <unistd.h>
 
 #include "tcpudp.h"
 
-int sock;
+int sock; /* internal communication socket */
 char buf[BUF_LEN];
 struct sockaddr_in tcpd_name;
 struct sockaddr_in troll_name;
 socklen_t tcpd_name_len;
 char roleport[MAX_PATH];
 
-struct hostent *troll_hp; /* server host */
+struct hostent *troll_hp; /* troll server host */
 
 void tcpd_SOCKET(struct sockaddr_in front_addr,socklen_t front_addr_len);
 void tcpd_BIND(struct sockaddr_in front_addr,socklen_t front_addr_len);
@@ -26,7 +31,7 @@ void tcpd_CONNECT(struct sockaddr_in front_addr,socklen_t front_addr_len);
 void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len);
 int main(int argc, char *argv[]) /* server program called with no argument */
 {
-
+    /* fetch console arguments */
     if(argc==2){
         strcpy(roleport,argv[1]);
     }else{
@@ -34,7 +39,7 @@ int main(int argc, char *argv[]) /* server program called with no argument */
         exit(1);
     }
 
-    /* create socket for connecting to server */
+    /* create internal communication socket */
     sock = socket(AF_INET, SOCK_DGRAM,0);
     if(sock < 0) {
         perror("opening datagram socket");
@@ -52,6 +57,7 @@ int main(int argc, char *argv[]) /* server program called with no argument */
     }
     tcpd_name.sin_addr.s_addr = INADDR_ANY;
 
+    /* bind the socket with name */
     if(bind(sock, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) < 0) {
         perror("error binding socket");
         exit(2);
@@ -63,9 +69,8 @@ int main(int argc, char *argv[]) /* server program called with no argument */
         exit(3);
     }
 
-
 #ifdef __WITH_TROLL
-    /* fetch server host via host name */
+    /* fetch troll server host via host name (local host) */
     troll_hp = gethostbyname("localhost");
     if(troll_hp == 0) {
         fprintf(stderr, "unknown host: localhost\n");
@@ -79,17 +84,19 @@ int main(int argc, char *argv[]) /* server program called with no argument */
 
     printf("Server waiting on port # %d\n", ntohs(tcpd_name.sin_port));
 
+    /* main loop, drived by upper local process */
     while(1){
         struct sockaddr_in front_addr;
         socklen_t front_addr_len;
+        /* fetch the function that upper local process calls */
         char tcpd_msg[TCPD_MSG_LEN];
-        /* waiting for connection from client on name and print what client sends */
         front_addr_len= sizeof(front_addr);
         if(recvfrom(sock, tcpd_msg, TCPD_MSG_LEN, MSG_WAITALL, (struct sockaddr *)&front_addr, &front_addr_len) < 0) {
             perror("error receiving"); 
             exit(4);
         }
         printf("Server receives: %s\n", tcpd_msg);
+        /* switch by the function */
         if(strcmp(tcpd_msg,"SOCKET")==0){
             tcpd_SOCKET(front_addr,front_addr_len);
         }else if(strcmp(tcpd_msg,"BIND")==0){
@@ -102,30 +109,14 @@ int main(int argc, char *argv[]) /* server program called with no argument */
             tcpd_SEND(front_addr,front_addr_len);
         }
     }
-    //     if(recvfrom(sock, buf, BUF_LEN, 0, (struct sockaddr *)&front_addr, &front_addr_len) < 0) {
-    //         perror("error receiving"); 
-    //         exit(4);
-    //     }
-    //     printf("Server receives: %s\n", buf);
-
-    //  server sends something back using the same socket 
-    // bzero(srv_buf, MAX_MES_LEN);
-    // strcpy(srv_buf, "Hello back in UDP from server");
-    // printf("Server sends:    %s\n", srv_buf);
-    // if(sendto(sock, srv_buf, buflen, 0, (struct sockaddr *)&name, namelen) < 0) {
-    // perror("sending datagram");
-    // exit(5);
-    // }
 
     /* server terminates connection, closes socket, and exits */
-    // close(sock);
+    close(sock);
     exit(0);
 }
 
-
-
-
 void tcpd_SOCKET(struct sockaddr_in front_addr,socklen_t front_addr_len){
+    /* fetch the oringin arguments of SOCKET calls */
     // int domain;
     // int type;
     // int protocol;
@@ -157,6 +148,7 @@ void tcpd_SOCKET(struct sockaddr_in front_addr,socklen_t front_addr_len){
     printf("SOCKET\n");
     // printf("SOCKET domain:%d, type:%d, protocol:%d\n",domain,type,protocol);
 
+    /* initialize the socket that upper process calls */
     int ret_sock=socket(AF_INET, SOCK_DGRAM,0);
     if(ret_sock < 0) {
         perror("opening datagram socket");
@@ -165,14 +157,15 @@ void tcpd_SOCKET(struct sockaddr_in front_addr,socklen_t front_addr_len){
 
     printf("SOCKET return %d\n",ret_sock);
 
+    /* return the socket initial result */
     if(sendto(sock, (char *)&ret_sock, sizeof(int), 0, (struct sockaddr *)&front_addr, sizeof(front_addr)) <0) {
         perror("error sending SOCKET return");
         exit(4);
     }
 }
 
-
 void tcpd_BIND(struct sockaddr_in front_addr,socklen_t front_addr_len){
+    /* fetch the oringin arguments of BIND calls */
     int sockfd;
     struct sockaddr_in addr;
     // socklen_t addrlen;
@@ -204,6 +197,7 @@ void tcpd_BIND(struct sockaddr_in front_addr,socklen_t front_addr_len){
     printf("BIND sockfd:%d, addr.port:%hu, addr.in_addr:%lu\n",sockfd,addr.sin_port,(unsigned long)addr.sin_addr.s_addr);
     // printf("SOCKET sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d\n",sockfd,addr.sin_port,addr.sin_addr,addrlen);
 
+    /* bind the socket with name provided */
     int ret_bind=bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
     if(ret_bind < 0) {
         perror("error binding socket");
@@ -212,6 +206,7 @@ void tcpd_BIND(struct sockaddr_in front_addr,socklen_t front_addr_len){
 
     printf("BIND return %d\n",ret_bind);
     
+    /* send bind result back */
     if(sendto(sock, (char *)&ret_bind, sizeof(int), 0, (struct sockaddr *)&front_addr, sizeof(front_addr)) <0) {
         perror("error sending BIND return");
         exit(4);
@@ -219,6 +214,7 @@ void tcpd_BIND(struct sockaddr_in front_addr,socklen_t front_addr_len){
 }
 
 void tcpd_RECV(struct sockaddr_in front_addr,socklen_t front_addr_len){
+    /* fetch the oringin arguments of RECV calls */
     int sockfd;
     // void *buf;
     size_t len;
@@ -251,11 +247,30 @@ void tcpd_RECV(struct sockaddr_in front_addr,socklen_t front_addr_len){
     printf("RECV sockfd:%d, len:%zu\n",sockfd,len);
     // printf("RECV sockfd:%d, len:%zu, flags:%d\n",sockfd,len,flags);
 
+    /* request too large */
     if(BUF_LEN<len){
         perror("error request length larger than buffer");
         exit(5);
     }
 
+#ifdef __WITH_TROLL
+    /* unwrap package with troll message structure */
+    struct troll_message_t troll_message;
+    struct sockaddr_in troll_addr;
+    socklen_t troll_addr_len;
+    troll_addr_len=sizeof(troll_addr);
+    ssize_t ret_recv=recvfrom(sockfd, (void *)&troll_message, sizeof(troll_message), MSG_WAITALL, (struct sockaddr *)&troll_addr, &troll_addr_len);
+    if(ret_recv < 0) {
+        perror("error receiving RECV");
+        exit(5);
+    }   
+    ret_recv=ret_recv-sizeof(struct sockaddr_in);
+    if(len>ret_recv){
+        len=ret_recv;
+    }
+    bcopy(troll_message.body,buf,len);
+#else
+    /* receive package directly */
     struct sockaddr_in client_addr;
     socklen_t client_addr_len;
     client_addr_len=sizeof(client_addr);
@@ -264,16 +279,22 @@ void tcpd_RECV(struct sockaddr_in front_addr,socklen_t front_addr_len){
         perror("error receiving RECV");
         exit(5);
     }
+    if(len>ret_recv){
+        len=ret_recv;
+    }
+#endif
 
-    printf("RECV return %zd\n",ret_recv);
+    printf("RECV return %zd\n",len);
     
-    if(sendto(sock, buf, ret_recv, 0, (struct sockaddr *)&front_addr, sizeof(front_addr)) <0) {
+    /* send package back to upper process */
+    if(sendto(sock, buf, len, 0, (struct sockaddr *)&front_addr, sizeof(front_addr)) <0) {
         perror("error sending RECV return");
         exit(4);
     }
 }
 
 void tcpd_CONNECT(struct sockaddr_in front_addr,socklen_t front_addr_len){
+    /* fetch the oringin arguments of CONNECT calls */
     int sockfd;
     struct sockaddr_in addr;
     // socklen_t addrlen;
@@ -305,6 +326,7 @@ void tcpd_CONNECT(struct sockaddr_in front_addr,socklen_t front_addr_len){
     printf("CONNECT sockfd:%d, addr.port:%hu, addr.in_addr:%lu\n",sockfd,addr.sin_port,(unsigned long)addr.sin_addr.s_addr);
     // printf("CONNECT sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d\n",sockfd,addr.sin_port,addr.sin_addr,addrlen);
 
+    /* record the connected name within socket */
     int ret_connect=connect(sockfd, (struct sockaddr *)&addr, sizeof(addr));
     if(ret_connect < 0) {
         perror("error connecting socket");
@@ -313,6 +335,7 @@ void tcpd_CONNECT(struct sockaddr_in front_addr,socklen_t front_addr_len){
 
     printf("CONNECT return %d\n",ret_connect);
     
+    /* send back connect result (alwalys success) */
     if(sendto(sock, (char *)&ret_connect, sizeof(int), 0, (struct sockaddr *)&front_addr, sizeof(front_addr)) <0) {
         perror("error sending CONNECT return");
         exit(4);
@@ -320,6 +343,7 @@ void tcpd_CONNECT(struct sockaddr_in front_addr,socklen_t front_addr_len){
 }
 
 void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len){
+    /* fetch the oringin arguments of SEND calls */
     int sockfd;
     // void *buf;
     size_t len;
@@ -357,6 +381,7 @@ void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len){
         exit(5);
     }
 
+    /* retrive the name stored within socket */
     struct sockaddr_in peer_addr;
     socklen_t peer_addr_len;
     peer_addr_len=sizeof(peer_addr);
@@ -366,14 +391,17 @@ void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len){
     }
     printf("SEND sockfd:%d, peer_addr.port:%hu, peer_addr.in_addr:%lu\n",sockfd,peer_addr.sin_port,(unsigned long)peer_addr.sin_addr.s_addr);
 
+    /* fetch data to send from upper process */
     if(recvfrom(sock, buf, len, MSG_WAITALL, (struct sockaddr *)&front_addr, &front_addr_len) < 0) {
         perror("error receiving SEND buf"); 
         exit(4);
     }
 
 #ifdef __WITH_TROLL
+    /* wrap data with troll message structure */
     struct troll_message_t troll_message;
     troll_message.header=peer_addr;
+    troll_message.header.sin_family=htons(AF_INET);
     bcopy(buf,troll_message.body,len);
     ssize_t ret_send=sendto(sockfd, (void *)&troll_message, sizeof(troll_message), MSG_WAITALL, (struct sockaddr *)&troll_name, sizeof(troll_name));
     if(ret_send < 0) {
@@ -381,6 +409,7 @@ void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len){
         exit(5);
     }
 #else
+    /* send data directly */
     ssize_t ret_send=sendto(sockfd, buf, len, MSG_WAITALL, (struct sockaddr *)&peer_addr, sizeof(peer_addr));
     if(ret_send < 0) {
         perror("error sending buffer");
@@ -390,6 +419,7 @@ void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len){
 
     printf("SEND return %zd\n",ret_send);
     
+    /* send result back */
     if(sendto(sock, (char *)&ret_send, sizeof(int), 0, (struct sockaddr *)&front_addr, sizeof(front_addr)) <0) {
         perror("error sending SEND return");
         exit(4);

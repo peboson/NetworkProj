@@ -10,43 +10,49 @@ OBJ = $(SRC:.c=.o)
 
 .PHONY: all clean test
 
-all: ftps ftpc ftpd
+all: ftps ftpc tcpd
 	mkdir -p server
 	mv ftps server/
-	cp ftpd server/
+	cp tcpd server/
 	mkdir -p client
 	mv ftpc client/
-	mv ftpd client/
+	mv tcpd client/
 
 ftps: ftps.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 ftpc: ftpc.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
-ftpd: ftpd.o tcpudp.o
+tcpd: tcpd.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 
 clean: 
-	rm -f ftps ftpc
+	rm -f ftps ftpc tcpd
 	rm -f *.o
 	rm -f *.out
 	rm -f core
 	rm -f *~
-	rm -f client/ftpc
+	rm -f client/ftpc client/tcpd
 	rm -f server/*
 depend: Makefile $(SRC)
 	makedepend $(INCLUDES) $(SRC)
-.c.o:
+%.o: %.c tcpudp.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 test:
-testsrv: test
-	cd server && ./ftps 1040
-testcli1: test
-	cd client && ./ftpc localhost 1040 1.jpg
-testcli2: test
-	cd client && ./ftpc localhost 1040 2.jpg
-testcli3: test
-	cd client && ./ftpc localhost 1040 3.jpg
-testcli4: test
-	cd client && ./ftpc localhost 1040 4.jpg
+ttroll: test
+	cd Troll && ./troll -x0 8081
+tsrvtcpd: test
+	cd server && ./tcpd server
+tsrvftps: test
+	cd server && ./ftps 8000
+tclitcpd: test
+	cd client && ./tcpd client
+tcli1: test
+	cd client && ./ftpc beta 8000 1.jpg
+tcli2: test
+	cd client && ./ftpc beta 8000 2.jpg
+tcli3: test
+	cd client && ./ftpc beta 8000 3.jpg
+tcli4: test
+	cd client && ./ftpc beta 8000 4.jpg
 ## end of Makefile # DO NOT DELETE THIS LINE -- make depend depends on it.

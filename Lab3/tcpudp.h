@@ -1,3 +1,8 @@
+/* File: tcpudp.c
+ * Author: Jason Song.988
+ * Description: CSE5462 Lab3
+ *     The description of TCP interface
+ */
 #ifndef _TCPUDP_H_
 #define _TCPUDP_H_
 
@@ -21,6 +26,7 @@
 #ifdef __WITH_TROLL
 #define TROLL_PORT "8081"
 #include "Troll/troll.h"
+/* the wrap of troll message */
 struct troll_message_t{
     struct sockaddr_in header;
     char body[BUF_LEN];
