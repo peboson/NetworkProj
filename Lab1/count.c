@@ -53,6 +53,10 @@ int main(int argc,char *argv[]){
         fprintf(stderr,"%s\n",strerror(errno));
         return 3;
     }
+    if(strlen(search_string)==0){
+        fprintf(stderr,"Invalid search string\n");
+        return 4;
+    }
 
     /* output file size to out_file */
     fprintf(out_file,"Size of file is %lu\n",in_file_size);

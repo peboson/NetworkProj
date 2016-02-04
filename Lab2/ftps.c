@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
         bzero(buf_in,1024);
 
         /* read file_size from sock_client */
-        r_val=read(sock_client, buf_in, 4);
+        r_val=recv(sock_client, buf_in, 4, MSG_WAITALL);
         if(r_val < 0) {
             perror("error reading file size");
             exit(1);
@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
         printf("file size: %u bytes\n", file_size);
 
         /* read file_name from sock_client */
-        r_val=read(sock_client, buf_in, 20);
+        r_val=recv(sock_client, buf_in, 20, MSG_WAITALL);
         if(r_val < 0) {
             perror("error reading file name");
             exit(1);
