@@ -1,5 +1,5 @@
 EXE = ftps ftpc
-SRC = ftps.c ftpc.c
+SRC = ftps.c ftpc.c tcpudp.c
 CC = gcc
 CC_OPTIONS = -g -Wall
 CS5462 = .
@@ -10,16 +10,20 @@ OBJ = $(SRC:.c=.o)
 
 .PHONY: all clean test
 
-all: ftps ftpc
+all: ftps ftpc ftpd
 	mkdir -p server
-	mv ftps server/ftps
+	mv ftps server/
+	cp ftpd server/
 	mkdir -p client
-	mv ftpc client/ftpc
+	mv ftpc client/
+	mv ftpd client/
 
-ftps: ftps.o
-	$(CC) $(CC_OPTIONS) -o $@ $< $(LIBS)
-ftpc: ftpc.o
-	$(CC) $(CC_OPTIONS) -o $@ $< $(LIBS)
+ftps: ftps.o tcpudp.o
+	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
+ftpc: ftpc.o tcpudp.o
+	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
+ftpd: ftpd.o tcpudp.o
+	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 
 clean: 
 	rm -f ftps ftpc
@@ -32,7 +36,7 @@ clean:
 depend: Makefile $(SRC)
 	makedepend $(INCLUDES) $(SRC)
 .c.o:
-	$(CC) $(CC_OPTIONS) $(INCLUDES) -c -o $@ $<
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 test:
 testsrv: test
