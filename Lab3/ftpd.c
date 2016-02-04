@@ -374,6 +374,7 @@ void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len){
 #ifdef __WITH_TROLL
     struct troll_message_t troll_message;
     troll_message.header=peer_addr;
+    troll_message.header.sin_family=htons(AF_INET);
     bcopy(buf,troll_message.body,len);
     ssize_t ret_send=sendto(sockfd, (void *)&troll_message, sizeof(troll_message), MSG_WAITALL, (struct sockaddr *)&troll_name, sizeof(troll_name));
     if(ret_send < 0) {
