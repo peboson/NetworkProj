@@ -1,3 +1,9 @@
+.pdf
+.jpg
+.jpeg
+.png
+.gif
+
 # Object files
 *.o
 *.ko

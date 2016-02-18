@@ -1,0 +1,101 @@
+/*
+CSE 5462 lab3
+Nathan Turner 200229714
+TCP client
+Usage: ./ftps <IP> <port> <file>
+*/
+
+#include <stdio.h>
+#include <sys/types.h>  
+#include <sys/socket.h>  
+#include <netinet/in.h>  
+#include <stdlib.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <time.h>
+
+
+int main(int argc, char *argv[])
+{
+	int client_s, binding;
+	char out_buff[1000];
+	bzero(out_buff,strlen(out_buff));	
+
+	//check if correct number of arguments were inputed
+	if(argc != 4){
+		printf("usage: ./ftps <IP> <port number> <file>");
+		exit(1);
+	}
+
+	struct sockaddr_in serv_addr;
+	client_s=SOCKET(AF_INET, SOCK_STREAM, 0); //create socket
+	if(client_s<0)
+		error("Error opening socket");
+
+	//fill in socket's address information
+	serv_addr.sin_family=AF_INET;
+	serv_addr.sin_addr.s_addr=inet_addr(argv[1]);
+	serv_addr.sin_port=htons(atoi(argv[2]));
+
+
+	int file_size;
+	FILE *fp;
+	//open input file
+	fp  = fopen(argv[3], "rb");
+	if (fp == NULL){
+		printf("cannot open input file %s\n", argv[3]);
+		exit(1);
+	}
+	//find size of file
+	fseek(fp,0,SEEK_END);
+	file_size = ftell(fp);
+	fseek(fp,0,0);
+
+	//send server size of file
+	int converted=htonl(file_size);
+	SEND(client_s,&converted,4,0);
+
+	//send size of file
+	char title[20];
+	send(client_s,argv[3],20,0);
+
+	//read file and send to server in 1000 byte increments
+	int read;
+	while(!feof(fp)){
+		read=fread(out_buff,sizeof(char),1000,fp);
+		send(client_s,out_buff,read,0);
+		bzero(out_buff,strlen(out_buff));
+	}
+
+
+
+	close(conn);
+	return 0;
+}
+
+//make UDP socket from TCP socket call
+int SOCKET(int family, int type, int protocol);{
+   return socket(family, SOCK_DGRAM, protocol);
+}
+
+int SEND(int sockfd, const void *msg, int len, int flags){
+
+}
+
+int RECV(int sockfd, void *buf, int len, unsigned int flags){
+
+}
+
+//NULL function for lab3
+int CONNECT(int sockfd, struct sockaddr *serv_addr, int addrlen){
+   return 0;
+}
+
+//NULL function for lab3
+int ACCEPT(int sockfd, void *peer, int *addrlen){
+   return 0;
+}
+
+
+

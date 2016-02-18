@@ -1,0 +1,18 @@
+Nathan Turner 200229714
+Lab 3
+server usage: ftps 
+client usage: ftpc  <file name>
+tcpd usage: tcpd
+troll usage: cd Troll && troll 4000
+
+The code should first be compiled by typing "make". The program can then be run using the above implementation. All ports and the two machine IP addresses are hard-coded. The IP addresses need to be changed to the machines in use from tcpd.c.
+The troll port is also hard-coded and can be ran using the implementaton above.
+A tcpd and ftps process need to be ran on one machine and another tcpd and ftpc process need to be ran on a second machine.
+The code also requires there to be a directory labeled output in the same directory as the client and server.
+The ftpc program will connect to a the local tcpd. It will then send the server the size of the file to be sent, along with the title of the file and the file sent in 1000 byte increments. These are sent through the tcpd and troll using UDP.
+The ftps program will send a message to its local tcpd requesting the file size, the file name, and then the file in 1000 byte increments. The program will then put the bytes into the given file in order.
+The program also will print an error message if the incorrect number of arguments are inputed or if either of the files cannot be opened or if their are any errors with the sockets. 
+
+
+****Note
+I could not figure out how to get the troll to send the correct number of bytes to ftps. The ftpc local tcpd received all messages but there was an error between the 2 tcpd proccesses. 
