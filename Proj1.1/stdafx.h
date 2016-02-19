@@ -12,6 +12,8 @@
 #define BUF_LEN 1000
 #define MAX_PATH 260
 
+#define CHECKSUM_ALGORITHM checksum
+
 
 #define __WITH_TROLL
 

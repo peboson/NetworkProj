@@ -22,7 +22,7 @@ ftps: ftps.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 ftpc: ftpc.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
-tcpd: tcpd.o tcpudp.o crc32.o
+tcpd: tcpd.o tcpudp.o crc32.o checksum.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 
 clean: 
@@ -35,7 +35,7 @@ clean:
 	rm -f server/*
 depend: Makefile $(SRC)
 	makedepend $(INCLUDES) $(SRC)
-%.o: %.c tcpudp.h
+%.o: %.c %.h stdafx.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 test:

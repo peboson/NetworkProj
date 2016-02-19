@@ -268,10 +268,10 @@ void tcpd_RECV(struct sockaddr_in front_addr,socklen_t front_addr_len){
             exit(5);
         }   
         if(troll_message.len>sizeof(troll_message.body)){
-            fprintf(stderr,"Length garbled\n");
+            fprintf(stderr,"[GARBLED] Length:%u\n",troll_message.len);
             continue;
         }
-        uint32_t CRC32=crc32(0xFFFFFFFF,troll_message.body,troll_message.len);
+        uint32_t CRC32=CHECKSUM_ALGORITHM(0,troll_message.body,troll_message.len);
         if(CRC32!=troll_message.CRC32){
             fprintf(stderr, "[GARBLED] CRC32: %u, Origin CRC32: %u\n", CRC32, troll_message.CRC32);
             continue;
@@ -418,7 +418,7 @@ void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len){
     troll_message.header.sin_family=htons(AF_INET);
     bcopy(buf,troll_message.body,len);
     troll_message.len=len;
-    troll_message.CRC32=crc32(0xFFFFFFFF,troll_message.body,troll_message.len);
+    troll_message.CRC32=CHECKSUM_ALGORITHM(0,troll_message.body,troll_message.len);
     fprintf(stderr, "CRC32 is %u\n", troll_message.CRC32);
     ssize_t ret_send=sendto(sockfd, (void *)&troll_message, sizeof(troll_message), MSG_WAITALL, (struct sockaddr *)&troll_name, sizeof(troll_name));
     sleep(1);
