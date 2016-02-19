@@ -12,10 +12,21 @@
 #define BUF_LEN 1000
 #define MAX_PATH 260
 
-#define CHECKSUM_ALGORITHM checksum
+#define CHECKSUM_ALGORITHM checksum32
 
 
 #define __WITH_TROLL
+
+
+#include <stdio.h>
+#include <strings.h>
+#include <string.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <unistd.h>
 
 #include "tcpudp.h"
 #include "crc32.h"

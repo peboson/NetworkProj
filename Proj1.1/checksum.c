@@ -1,5 +1,5 @@
 #include "checksum.h"
-uint32_t  checksum(uint32_t crc, void* buf, size_t len){
+uint32_t  checksum32(uint32_t crc, void* buf, size_t len){
     uint64_t sum=0;
     uint32_t *buf_uint32=buf;
     while(len){

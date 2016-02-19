@@ -268,7 +268,7 @@ void tcpd_RECV(struct sockaddr_in front_addr,socklen_t front_addr_len){
             exit(5);
         }   
         if(troll_message.len>sizeof(troll_message.body)){
-            fprintf(stderr,"[GARBLED] Length:%u\n",troll_message.len);
+            fprintf(stderr,"[GARBLED] Length:%zu\n",troll_message.len);
             continue;
         }
         uint32_t CRC32=CHECKSUM_ALGORITHM(0,troll_message.body,troll_message.len);

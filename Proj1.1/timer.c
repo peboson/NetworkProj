@@ -5,6 +5,8 @@ timer process
 Usage: ./timer
 */
 
+#include "stdafx.h"
+
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -60,7 +62,7 @@ int main()
     timer_addr.sin_addr.s_addr=INADDR_ANY;
     timer_addr.sin_port=htons(port);
     struct sockaddr_in cli;
-    int len=sizeof(cli);
+    socklen_t len=sizeof(cli);
 
         //bind tcpd socket
     if(bind(driver,(struct sockaddr *)&timer_addr,sizeof(timer_addr))<0){

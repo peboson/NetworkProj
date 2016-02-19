@@ -10,13 +10,15 @@ OBJ = $(SRC:.c=.o)
 
 .PHONY: all clean test
 
-all: ftps ftpc tcpd
+all: ftps ftpc tcpd timer driver
 	mkdir -p server
 	mv ftps server/
 	cp tcpd server/
 	mkdir -p client
 	mv ftpc client/
 	mv tcpd client/
+	mv timer client/
+	mv driver client/
 
 ftps: ftps.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
@@ -24,17 +26,23 @@ ftpc: ftpc.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 tcpd: tcpd.o tcpudp.o crc32.o checksum.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
+timer: timer.o
+	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
+driver: driver.o
+	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 
 clean: 
-	rm -f ftps ftpc tcpd
+	rm -f ftps ftpc tcpd timer driver
 	rm -f *.o
 	rm -f *.out
 	rm -f core
 	rm -f *~
-	rm -f client/ftpc client/tcpd
+	rm -f client/ftpc client/tcpd client/timer client/driver
 	rm -f server/*
+
 depend: Makefile $(SRC)
 	makedepend $(INCLUDES) $(SRC)
+	
 %.o: %.c %.h stdafx.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 

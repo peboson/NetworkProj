@@ -5,6 +5,8 @@ driver process
 Usage: ./driver
 */
 
+#include "stdafx.h"
+
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
