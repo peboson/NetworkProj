@@ -3,6 +3,7 @@ NAME
 
 AUTHOR
     Jason Song.988
+    Nathan Turner.1019
 
 INSTALL
     make
@@ -14,15 +15,20 @@ USAGE
     tcpd server|client|port
     ftps [local_port]
     ftpc remote_IP remote_port local_file_to_transfer
+    timer
+    driver
 
 DESCRIPTION
-    This is the Lab3 for course CSE 5462 Network Programming
+    This is the Project1 for course CSE 5462 Network Programming
 
     ftps will receive the file that ftpc sends
     ftps will listen on local_port, receive multiple files until stop manually by ctrl-C.
     ftpc will send local_file_to_transfer to remote_IP:remote_port. One file will be sent during each run with one connection.
 
     By default, the ftps must depend on a running tcpd deamon on its system. The ftpc must depend on both running tcpd deamon and troll simulator.
+
+    timer will listen on a local port, and receive start and cancel timer commands from driver.
+    drivr will send test commands to timer on a local port.
 
 FILES
     ftpc.c
@@ -39,6 +45,12 @@ FILES
 
     tcpudp.c
     This is the implementation of tcp interface. It sends and receive signal and data to tcp deamon process.
+
+    timer.c
+    This is the source file for timer process, which contains logic to make delta time nodes for a doubly linked list.
+
+    driver.c
+    This is the source file for the driver process, which sends start and stop timer commands to the timer process.
 
 TEST
     To run built-in test, simply compile all first with
@@ -67,4 +79,8 @@ TEST
         cd client && ./ftpc remote_IP remote_port local_file_to_transfer
     The file will be sent to server directory.
 
-
+    To start timer, run
+	./timer
+    Then start the driver with
+	./driver
+    The driver will then send commands on a hard-coded local port.
