@@ -5,6 +5,8 @@ driver process
 Usage: ./driver
 */
 
+#include "stdafx.h"
+
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -54,9 +56,11 @@ int main()
     starttimer(10.0,2);
     starttimer(30.0,3);
     sleep(5);
+    printf("Sleep\t5\n");
     canceltimer(2);
     starttimer(20.0,4);
     sleep(5);
+    printf("Sleep\t5\n");
     starttimer(18.0,5);
     canceltimer(4);
     canceltimer(8);
@@ -68,6 +72,7 @@ int main()
 
 
 void starttimer(double time, int seq){
+    printf("StartTimer\tseq:%d\ttime:%.02f\n",seq,time);
     //set packet variables
     pack.returnPort=port;
     pack.seq=seq;
@@ -78,6 +83,7 @@ void starttimer(double time, int seq){
 }
 
 void canceltimer(int seq){
+    printf("CancelTimer\tseq:%d\n",seq);
     //set packet variables
     pack.returnPort=port;
     pack.seq=seq;

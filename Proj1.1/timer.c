@@ -5,6 +5,8 @@ timer process
 Usage: ./timer
 */
 
+#include "stdafx.h"
+
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -34,7 +36,8 @@ struct packet{
     int seq;
     double time; 
     int start; //start or cancel timer
-}pack;
+};
+struct packet pack;
 
 int port=8080;
 
@@ -60,7 +63,7 @@ int main()
     timer_addr.sin_addr.s_addr=INADDR_ANY;
     timer_addr.sin_port=htons(port);
     struct sockaddr_in cli;
-    int len=sizeof(cli);
+    socklen_t len=sizeof(cli);
 
         //bind tcpd socket
     if(bind(driver,(struct sockaddr *)&timer_addr,sizeof(timer_addr))<0){
@@ -250,12 +253,12 @@ void updateNodes(struct node **head){
         lasttime=time(NULL);
     }
     time_t nowtime=time(NULL);
-    uint64_t difftime=nowtime-lasttime;
+    uint64_t ElapsedTime=nowtime-lasttime;
     lasttime=nowtime;
 
     //update first node timer and remove if <=0
     if(temp != NULL){
-        temp->timeDiff-=difftime;
+        temp->timeDiff-=ElapsedTime;
         if(temp->timeDiff <= 0){
             int seq=temp->seq;
             //call back to driver here
@@ -272,7 +275,7 @@ void printNodes(struct node *head){
     if(temp != NULL){
         printf("Nodes: ");
         while(temp != NULL){
-            printf("seq %d, time %.2f     ",temp->seq,temp->timeDiff);
+            printf("seq %d, time %.2f \t",temp->seq,temp->timeDiff);
             temp=temp->next;
         }
         printf("\n");
