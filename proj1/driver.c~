@@ -54,7 +54,7 @@ int main()
 	starttimer(30.0,3);
 	sleep(5);
 	canceltimer(2);
-	starttimer(20.0,3);
+	starttimer(20.0,4);
 	sleep(5);
 	starttimer(18.0,5);
 	canceltimer(4);

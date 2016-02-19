@@ -72,7 +72,7 @@ void starttimer(double time, int seq){
 	pack.seq=seq;
 	pack.time=time;
 	pack.start=STARTTIMER;
-	
+	//send request to timer process
 	sendto(timer,(void *)&pack,sizeof(pack),0,(struct sockaddr *)&driver_addr,sizeof(driver_addr));
 }
 
@@ -81,6 +81,6 @@ void canceltimer(int seq){
 	pack.returnPort=port;
 	pack.seq=seq;
 	pack.start=ENDTIMER;
-	
+	//send request to timer process
 	sendto(timer,(void *)&pack,sizeof(pack),0,(struct sockaddr *)&driver_addr,sizeof(driver_addr));
 }
