@@ -46,6 +46,9 @@ FILES
     tcpudp.c
     This is the implementation of tcp interface. It sends and receive signal and data to tcp deamon process.
 
+    crc.c
+    This is the implementation of CRC32 algorithm.
+
     timer.c
     This is the source file for timer process, which contains logic to make delta time nodes for a doubly linked list.
 
@@ -80,7 +83,7 @@ TEST
     The file will be sent to server directory.
 
     To start timer, run
-	./timer
+	cd client && ./timer
     Then start the driver with
-	./driver
+	cd client && ./driver
     The driver will then send commands on a hard-coded local port.

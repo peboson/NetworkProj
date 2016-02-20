@@ -18,6 +18,7 @@ Usage: ./timer
 #include <time.h>
 #include <linux/tcp.h>
 #include <stdint.h>
+#include <sys/time.h>
 #define STARTTIMER 1
 #define ENDTIMER 0
 
@@ -82,8 +83,13 @@ int main()
         //set fds values
         FD_ZERO(&fds);
         FD_SET(driver,&fds);
-        t.tv_sec=1;
-        t.tv_usec=0;
+        if(head==NULL){
+            t.tv_sec=1000;
+            t.tv_usec=0;
+        }else{
+            t.tv_sec=(unsigned)(head->timeDiff);
+            t.tv_usec=(unsigned)((head->timeDiff-t.tv_sec)*1000000);
+        }
         //call select with timeout looking at local socket
         int rcv=select(driver+1,&fds,NULL,NULL,&t);
         //if pack is in sock then read it
@@ -141,6 +147,10 @@ int addNode(struct node **head){
         newNode->next=temp;
         temp->prev=newNode;
         *head=newNode;
+    }
+    else if(temp->next==NULL){
+        temp->next=newNode;
+        newNode->prev=temp;
     }
     //if not first element in list
     else{
@@ -207,26 +217,28 @@ int deleteNode(struct node **head, int seq){
         else{
             //look through middle nodes
             temp=temp->next;
-            while(temp->next!=NULL){
-                //remove node and update next nodes timer
-                if(temp->seq==seq){
-                    if(temp->next!=NULL)
-                        temp->next->timeDiff+=temp->timeDiff;
-                    temp->prev->next=temp->next;
-                    temp->next->prev=temp->prev;
-                    del=1;
-                    free(temp);
-                    break;
-                }
+            if(temp!=NULL){
+                while(temp->next!=NULL){
+                    //remove node and update next nodes timer
+                    if(temp->seq==seq){
+                        if(temp->next!=NULL)
+                            temp->next->timeDiff+=temp->timeDiff;
+                        temp->prev->next=temp->next;
+                        temp->next->prev=temp->prev;
+                        del=1;
+                        free(temp);
+                        break;
+                    }
 
-                temp=temp->next;
+                    temp=temp->next;
+                }
+                //if last node
+                if(del==0 && temp->seq==seq){        
+                    temp->prev->next=temp->next;
+                    free(temp);
+                    del=1;                
+                }    
             }
-            //if last node
-            if(del==0 && temp->seq==seq){        
-                temp->prev->next=temp->next;
-                free(temp);
-                del=1;                
-            }    
         }
 
     }
@@ -248,12 +260,16 @@ int checkForNode(struct node *head, int seq){
 void updateNodes(struct node **head){
     struct node *temp=*head;
     //get time difference
-    static time_t lasttime=0;
-    if(lasttime==0){
-        lasttime=time(NULL);
+    static struct timeval lasttime={.tv_usec=0};
+    if(lasttime.tv_usec==0){
+        gettimeofday(&lasttime,NULL);
+        //lasttime=time(NULL);
     }
-    time_t nowtime=time(NULL);
-    uint64_t ElapsedTime=nowtime-lasttime;
+    struct timeval nowtime;
+    gettimeofday(&nowtime,NULL);
+    //printf("%lu %lu\n", nowtime.tv_sec, nowtime.tv_usec);
+    double ElapsedTime=(nowtime.tv_sec*1.0-lasttime.tv_sec*1.0)+(nowtime.tv_usec*1.0-lasttime.tv_usec*1.0)/1000000;
+    //printf("%lf\n" ,ElapsedTime);
     lasttime=nowtime;
 
     //update first node timer and remove if <=0
