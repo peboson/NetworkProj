@@ -19,6 +19,8 @@
 /* server program called with no argument */
 int main(int argc, char *argv[])
 {
+    GlobalInitialize();
+    g_message("Run ftps Process");
     char port[8]=SERVER_PUBLIC_PORT; /* default port */
     int sock; /* initial server socket descriptor */
     struct sockaddr_in sin_addr; /* structure for socket name setup */

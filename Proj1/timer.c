@@ -7,293 +7,236 @@ Usage: ./timer
 
 #include "stdafx.h"
 
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <time.h>
-#include <linux/tcp.h>
-#include <stdint.h>
-#include <sys/time.h>
-#define STARTTIMER 1
-#define ENDTIMER 0
-
-//node structure for list of packet timers
-struct node{
-    struct node *next;
-    struct node *prev;
-    double timeDiff;
-    int port;
-    int seq;
+struct TimerNodeStruct{
+    int Session;
+    int SeqNum;
+    double RemainSeconds;
+    struct sockaddr *RequestAddr;
 };
 
-//packet with timer info 
-struct packet{
-    int returnPort;
-    int seq;
-    double time; 
-    int start; //start or cancel timer
-};
-struct packet pack;
+int TimerSocket;
+GList *TimerList=NULL;
+struct timeval LastSystemTime={.tv_sec=0, .tv_usec=0};
+char TimerPort[8]=TIMER_PORT;
 
-int port=8080;
-
-int addNode(struct node **head);
-int deleteNode(struct node **head, int seq);
-int checkForNode(struct node *head, int seq);
-void updateNodes(struct node **head);
-void printNodes(struct node *head);
+ERRCODE InsertRequest(const struct TimerRequestStruct * NowRequest,struct sockaddr *RequestAddr);
+ERRCODE CancelRequest(const struct TimerRequestStruct * NowRequest);
+ERRCODE UpdateTimerList();
+ERRCODE SendCallbacks();
+ERRCODE DisplayTimerList();
 
 int main()
 {
-    int driver;
-    //local driver socket
-    driver=socket(AF_INET, SOCK_DGRAM, 0); //create socket
-    if(driver<0){
-        printf("error opening socket\n");
+    GlobalInitialize();
+    g_message("Run Timer Process");
+    g_debug("Fetching last system time ...");
+    fprintf(stdout,"test");
+    gettimeofday(&LastSystemTime,NULL);
+    g_debug("Constructing timer socket ...");
+    TimerSocket=socket(AF_INET, SOCK_DGRAM, 0);
+    if(TimerSocket<0){
+        perror("error openning datagram socket");
         exit(1);
     }
-
-    //local socket information
-    struct sockaddr_in timer_addr;
-    timer_addr.sin_family=AF_INET;
-    timer_addr.sin_addr.s_addr=INADDR_ANY;
-    timer_addr.sin_port=htons(port);
-    struct sockaddr_in cli;
-    socklen_t len=sizeof(cli);
-
-        //bind tcpd socket
-    if(bind(driver,(struct sockaddr *)&timer_addr,sizeof(timer_addr))<0){
-        perror("error binding socket");
+    g_info("Constructed timer socket with fd %d",TimerSocket);
+    g_debug("Binding timer socket to port %s ...",TimerPort);
+    struct sockaddr_in TimerAddr;
+    TimerAddr.sin_family = AF_INET;
+    TimerAddr.sin_addr.s_addr = INADDR_ANY;
+    TimerAddr.sin_port = htons(atoi(TimerPort));
+    if(bind(TimerSocket, (struct sockaddr *)&TimerAddr, sizeof(TimerAddr)) < 0) {
+        perror("error binding stream socket");
         exit(1);
     }
-
-    //initialize head of node to null
-    struct node *head;
-    head=NULL;
-
-    //initialize select values
-    fd_set fds;
-    struct timeval t;    
+    g_info("Binded timer socket to port %s",TimerPort);
+    g_debug("Entering main loop ...");
+    fd_set TimerSocketSet;
+    struct timeval SleepTime;
     while(1){
-        //set fds values
-        FD_ZERO(&fds);
-        FD_SET(driver,&fds);
-        if(head==NULL){
-            t.tv_sec=1000;
-            t.tv_usec=0;
+        g_debug("Fill waiting sockets set ...");
+        FD_ZERO(&TimerSocketSet);
+        FD_SET(TimerSocket,&TimerSocketSet);
+        g_debug("Setting waiting time ...");
+        if(TimerList==NULL){
+            SleepTime.tv_sec=1000;
+            SleepTime.tv_usec=0;
         }else{
-            t.tv_sec=(unsigned)(head->timeDiff);
-            t.tv_usec=(unsigned)((head->timeDiff-t.tv_sec)*1000000);
+            GList *TimerFirst=g_list_first(TimerList);
+            SleepTime.tv_sec=(unsigned)(((struct TimerNodeStruct *)(((struct TimerNodeStruct *)(TimerFirst->data))))->RemainSeconds);
+            SleepTime.tv_usec=(unsigned)(SEC2USEC*(((struct TimerNodeStruct *)(TimerFirst->data))->RemainSeconds-SleepTime.tv_sec));
         }
-        //call select with timeout looking at local socket
-        int rcv=select(driver+1,&fds,NULL,NULL,&t);
-        //if pack is in sock then read it
-        if(rcv>0){
-            recvfrom(driver,(void *)&pack,sizeof(pack),0,(struct sockaddr *)&cli,&len);            
-            //if call for start of new timer then add node to list            
-            if(pack.start==STARTTIMER){
-                if(!addNode(&head))
-                    printf("error adding dup node %d\n",pack.seq);
-                else
-                    printf("added node %d, with timer %.02f\n",pack.seq,pack.time);
-            }
-            //if call to end timer delete node from list
-            if(pack.start==ENDTIMER){
-                if(!deleteNode(&head,pack.seq))
-                    printf("error on delete seq %d\n",pack.seq);
-                else
-                    printf("deleted node %d\n",pack.seq);
-            }
-
+        g_debug("Waiting incomming requests for %zu .%06zu seconds ...",SleepTime.tv_sec,SleepTime.tv_usec);
+        int ready=select(TimerSocket+1,&TimerSocketSet,NULL,NULL,&SleepTime);
+        g_debug("Request received or time expired");
+        g_debug("Updating timer list ...");
+        UpdateTimerList();
+        if(ready<0){
+            perror("error select");
+            exit(1);
         }
-        //update timers on nodes
-        updateNodes(&head);    
-        //print current node list
-        printNodes(head);
-    }
-    //close sock
-    close(driver);
-}
-
-
-//add node to list of seq# timers given pointer to head of node
-int addNode(struct node **head){
-    //create new node with given values
-    struct node *newNode;
-    newNode=(struct node *)malloc(sizeof(struct node));
-    newNode->timeDiff=pack.time;
-    newNode->port=pack.returnPort;
-    newNode->seq=pack.seq;
-    newNode->next=NULL;
-    newNode->prev=NULL;    
-    //temp node pointer to iterate through list
-    struct node *temp=*head;
-
-    //if seq# is already in list return
-    if(checkForNode(*head, pack.seq)){
-        return 0;
-    }
-    //if list is empty make new node first node in list
-    if(*head == NULL){
-        *head=newNode;
-    }
-    //else if new node timer is less than start of list add to front of list
-    else if(temp->timeDiff > pack.time){
-        newNode->next=temp;
-        temp->prev=newNode;
-        *head=newNode;
-    }
-    else if(temp->next==NULL){
-        temp->next=newNode;
-        newNode->prev=temp;
-    }
-    //if not first element in list
-    else{
-        //lower time of node as you iterate through list
-        newNode->timeDiff-=temp->timeDiff;
-        temp=temp->next;
-        int added=0;
-        //while in middle of list and new node hasnt been added
-        while(temp->next != NULL && added==0){
-            //add node to middle of list
-            if(newNode->timeDiff <= temp->timeDiff){
-                newNode->next=temp;
-                newNode->prev=temp->prev;
-                temp->prev->next=newNode;
-                temp->prev=newNode;
-                added=1;
-                break;
-            }
-            newNode->timeDiff-=temp->timeDiff;                    
-            temp=temp->next;
-        }
-        //place new node at end of list
-        if(temp->next == NULL && temp->timeDiff < newNode->timeDiff && added==0){
-            newNode->prev=temp;
-            newNode->timeDiff-=temp->timeDiff;
-            temp->next=newNode;
-            added=1;
-        }
-        //place new node directly before last node in list
-        else if(temp->next == NULL && temp->timeDiff >= newNode->timeDiff && added==0){
-            newNode->next=temp;
-            newNode->prev=temp->prev;
-            temp->prev->next=newNode;
-            temp->prev=newNode;
-            added=1;
-        }
-    }
-
-    //if theres another node after newNode get time difference
-    temp=newNode->next;
-    if(temp!=NULL)
-        temp->timeDiff-=newNode->timeDiff;
-    return 1;
-}
-
-//delete node from list with given seq# and pointer to head of node
-int deleteNode(struct node **head, int seq){
-    int del=0;
-    struct node *temp=*head;
-
-    //make sure list isnt empty
-    if(temp!=NULL){
-        //if first node is node to delete
-        if(temp->seq == seq){
-            //remove node and update next nodes timer
-            *head=temp->next;
-            if(temp->next!=NULL){
-                temp->next->prev=NULL;
-                temp->next->timeDiff+=temp->timeDiff;
-            }
-            free(temp);
-            del=1;
-        }
-        else{
-            //look through middle nodes
-            temp=temp->next;
-            if(temp!=NULL){
-                while(temp->next!=NULL){
-                    //remove node and update next nodes timer
-                    if(temp->seq==seq){
-                        if(temp->next!=NULL)
-                            temp->next->timeDiff+=temp->timeDiff;
-                        temp->prev->next=temp->next;
-                        temp->next->prev=temp->prev;
-                        del=1;
-                        free(temp);
+        g_debug("Checking received request ...");
+        if(ready>0){
+            if(FD_ISSET(TimerSocket,&TimerSocketSet)){
+                g_debug("Request received from TimerSocket");
+                struct TimerRequestStruct NowRequest;
+                struct sockaddr_in *RequestAddr=(struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+                socklen_t RequestAddrLength=sizeof(RequestAddr);
+                g_debug("Fetching request ...");
+                recvfrom(TimerSocket,(void *)&NowRequest,sizeof(NowRequest),MSG_WAITALL,(struct sockaddr *)RequestAddr,&RequestAddrLength);
+                g_info("Request fetched Type:%d SeqNum:%d, Seconds:%0.2lf",NowRequest.Type,NowRequest.SeqNum,NowRequest.Seconds);
+                switch(NowRequest.Type){
+                    case TimerRequestStart:{
+                        InsertRequest(&NowRequest,(struct sockaddr *)RequestAddr);
                         break;
                     }
-
-                    temp=temp->next;
+                    case TimerRequestCancel:{
+                        CancelRequest(&NowRequest);
+                        break;
+                    }
                 }
-                //if last node
-                if(del==0 && temp->seq==seq){        
-                    temp->prev->next=temp->next;
-                    free(temp);
-                    del=1;                
-                }    
             }
         }
-
+        g_debug("Sending callbacks ...");
+        SendCallbacks();
+        g_debug("Displaying timer list ...");
+        DisplayTimerList();
     }
-    return del;
-}
-
-//find node with given seq number
-int checkForNode(struct node *head, int seq){
-    while(head != NULL){
-        if(head->seq == seq){
-            return 1;
-        }
-        head=head->next;
-    }
+    g_debug("Closing TimerSocket ...");
+    close(TimerSocket);
     return 0;
 }
 
-//update node timers
-void updateNodes(struct node **head){
-    struct node *temp=*head;
-    //get time difference
-    static struct timeval lasttime={.tv_usec=0};
-    if(lasttime.tv_usec==0){
-        gettimeofday(&lasttime,NULL);
-        //lasttime=time(NULL);
-    }
-    struct timeval nowtime;
-    gettimeofday(&nowtime,NULL);
-    //printf("%lu %lu\n", nowtime.tv_sec, nowtime.tv_usec);
-    double ElapsedTime=(nowtime.tv_sec*1.0-lasttime.tv_sec*1.0)+(nowtime.tv_usec*1.0-lasttime.tv_usec*1.0)/1000000;
-    //printf("%lf\n" ,ElapsedTime);
-    lasttime=nowtime;
-
-    //update first node timer and remove if <=0
-    if(temp != NULL){
-        temp->timeDiff-=ElapsedTime;
-        if(temp->timeDiff <= 0){
-            int seq=temp->seq;
-            //call back to driver here
-            if(deleteNode(head,seq))
-                printf("node %d expired\n",seq);
+ERRCODE InsertRequest(const struct TimerRequestStruct * NowRequest, struct sockaddr *RequestAddr){
+    g_debug("Call Insert Request ...");
+    g_assert(NowRequest);
+    g_debug("Constructing node for request %d ...",NowRequest==NULL?-1:NowRequest->SeqNum);
+    struct TimerNodeStruct *NowNode=(struct TimerNodeStruct *)malloc(sizeof(struct TimerNodeStruct));
+    NowNode->Session=NowRequest->Session;
+    NowNode->SeqNum=NowRequest->SeqNum;
+    NowNode->RemainSeconds=NowRequest->Seconds;
+    NowNode->RequestAddr=RequestAddr;
+    g_debug("Checking duplicated SeqNum for %d ...",NowNode->SeqNum);
+    GList *l=TimerList;
+    while(l!=NULL){
+        if((((struct TimerNodeStruct *)(l->data))->Session==NowNode->Session)&&(((struct TimerNodeStruct *)(l->data))->SeqNum==NowNode->SeqNum)){
+            g_message("Insert %d failed. Duplicated SeqNum",NowNode->SeqNum);
+            return 1;
         }
-        temp=temp->next;
+        l=l->next;
     }
+    g_debug("Finding position for SeqNum %d ...",NowNode->SeqNum);
+    l=TimerList;
+    while(l!=NULL){
+        if(NowNode->RemainSeconds<((struct TimerNodeStruct *)(l->data))->RemainSeconds){
+            break;
+        }
+        NowNode->RemainSeconds-=((struct TimerNodeStruct *)(l->data))->RemainSeconds;
+        l=l->next;
+    }
+    g_debug("Inserting SeqNum %d ...",NowNode->SeqNum);
+    TimerList=g_list_insert_before(TimerList,l,NowNode);
+    g_info("Inserted %d before %d",NowNode->SeqNum,l==NULL?-1:((struct TimerNodeStruct *)(l->data))->SeqNum);
+    g_debug("Updating SeqNum %d ...",l==NULL?-1:((struct TimerNodeStruct *)(l->data))->SeqNum);
+    if(l!=NULL){
+        ((struct TimerNodeStruct *)(l->data))->RemainSeconds-=NowNode->RemainSeconds;
+    }
+    g_debug("Insert Request done.");
+    g_message("Timer request inserted. SeqNum:%d, Seconds:%0.2lf (Session:%d)",NowRequest->SeqNum,NowRequest->Seconds,NowRequest->Session);
+    return 0;
 }
 
-//print node list
-void printNodes(struct node *head){
-    struct node *temp=head;
-    if(temp != NULL){
-        printf("Nodes: ");
-        while(temp != NULL){
-            printf("seq %d, time %.2f \t",temp->seq,temp->timeDiff);
-            temp=temp->next;
+ERRCODE CancelRequest(const struct TimerRequestStruct * NowRequest){
+    g_debug("Call Cancel Request ...");
+    g_assert(NowRequest);
+    g_debug("Finding Existence of SeqNum %d ...",NowRequest->SeqNum);
+    GList *l=TimerList;
+    while(l!=NULL){
+        if((((struct TimerNodeStruct *)(l->data))->Session==NowRequest->Session)&&(((struct TimerNodeStruct *)(l->data))->SeqNum==NowRequest->SeqNum)){
+            break;
         }
-        printf("\n");
+        l=l->next;
     }
+    g_debug("Checking Existence of SeqNum %d ...",NowRequest->SeqNum);
+    if(l==NULL){
+        g_message("Cancel %d failed. Not found.",NowRequest->SeqNum);
+        return 1;
+    }
+    g_debug("Updating SeqNum %d ...",l->next==NULL?-1:((struct TimerNodeStruct *)(l->next->data))->SeqNum);
+    if(l->next!=NULL){
+        ((struct TimerNodeStruct *)(l->next->data))->RemainSeconds+=((struct TimerNodeStruct *)(l->data))->RemainSeconds;
+    }
+    g_debug("Deleting SeqNum %d ...",l==NULL?-1:((struct TimerNodeStruct *)(l->data))->SeqNum);
+    TimerList=g_list_delete_link(TimerList,l);
+    g_info("Deleted SeqNum %d ...",NowRequest->SeqNum);
+    g_debug("Cancel Request done.");
+    g_message("Timer request canceled. SeqNum:%d, (Session:%d)",NowRequest->SeqNum,NowRequest->Session);
+    return 0;
+}
+
+ERRCODE UpdateTimerList(){
+    g_debug("Call Update Timer List ...");
+    g_assert(LastSystemTime.tv_sec!=0);
+    g_debug("Calculating elapsed time ...");
+    struct timeval NowSystemTime;
+    gettimeofday(&NowSystemTime,NULL);
+    double ElapsedSeconds=(double)(NowSystemTime.tv_sec-LastSystemTime.tv_sec) +USEC2SEC*NowSystemTime.tv_usec-USEC2SEC*LastSystemTime.tv_usec;
+    LastSystemTime=NowSystemTime;
+    g_info("Elapsed %lf seconds",ElapsedSeconds);
+    g_debug("Update first timer node ...");
+    if(TimerList!=NULL){
+        GList *TimerFirst=g_list_first(TimerList);
+        ((struct TimerNodeStruct *)(TimerFirst->data))->RemainSeconds-=ElapsedSeconds;
+    }
+    g_debug("Transmitting over time ...");
+    GList *l=TimerList;
+    while(l!=NULL){
+        if(((struct TimerNodeStruct *)(l->data))->RemainSeconds>0){
+            break;
+        }
+        if(l->next!=NULL){
+            ((struct TimerNodeStruct *)(l->next->data))->RemainSeconds+=((struct TimerNodeStruct *)(l->data))->RemainSeconds;
+        }
+        ((struct TimerNodeStruct *)(l->data))->RemainSeconds=0;
+        g_info("SeqNum %d expired",((struct TimerNodeStruct *)(l->data))->SeqNum);
+        l=l->next;
+    }
+    g_debug("Update Timer List done.");
+    return 0;
+}
+
+ERRCODE SendCallbacks(){
+    g_debug("Call Send Callbacks ...");
+    g_debug("Searching Timer List ...");
+    while(TimerList!=NULL){
+        GList *TimerFirst=g_list_first(TimerList);
+        if(((struct TimerNodeStruct *)(TimerFirst->data))->RemainSeconds>0){
+            break;
+        }
+        g_debug("Sending callback with SeqNum %d",((struct TimerNodeStruct *)(TimerFirst->data))->SeqNum);
+        struct TimerExpiredStruct NowExpired;
+        NowExpired.Session=((struct TimerNodeStruct *)(TimerFirst->data))->Session;
+        NowExpired.SeqNum= ((struct TimerNodeStruct *)(TimerFirst->data))->SeqNum;
+        struct sockaddr *RequestAddr=((struct TimerNodeStruct *)(TimerFirst->data))->RequestAddr;
+        ssize_t SendRet=sendto(TimerSocket,(void *)&NowExpired,sizeof(NowExpired),0,RequestAddr,sizeof(*RequestAddr));
+        if(SendRet<0){
+            perror("Error sending");
+            exit(1);
+        }
+        g_message("Sent callback with SeqNum %d (Session:%d)",NowExpired.SeqNum,NowExpired.Session);
+        TimerList=g_list_delete_link(TimerList,TimerFirst);
+        g_info("Deleted SeqNum %d ...",NowExpired.SeqNum);
+    }
+    g_debug("Send Callbacks done.");
+    return 0;
+}
+
+ERRCODE DisplayTimerList(){
+    g_debug("Call Display Timer List ...");
+    GList *l=TimerList;
+    while(l!=NULL){
+        g_info("TimerNode SeqNum: %d, RemainSeconds: %0.2lf (Session:%d)", ((struct TimerNodeStruct *)(l->data))->SeqNum, ((struct TimerNodeStruct *)(l->data))->RemainSeconds, ((struct TimerNodeStruct *)(l->data))->Session);
+        l=l->next;
+    }
+    g_debug("Display Timer List done.");
+    return 0;
 }

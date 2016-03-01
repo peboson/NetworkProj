@@ -16,6 +16,7 @@
 /* client program called with host name where server is run */
 int main(int argc, char *argv[])
 {
+    GlobalInitialize();
     int sock; /* initial socket descriptor */
     int r_val; /* returned value from read */
     int w_val; /* returned value from write */

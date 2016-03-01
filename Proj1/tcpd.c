@@ -32,6 +32,7 @@ void tcpd_CONNECT(struct sockaddr_in front_addr,socklen_t front_addr_len);
 void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len);
 int main(int argc, char *argv[]) /* server program called with no argument */
 {
+    GlobalInitialize();
     /* fetch console arguments */
     if(argc==2){
         strcpy(roleport,argv[1]);
