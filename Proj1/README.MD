@@ -1,24 +1,25 @@
-NAME
-    ftps ftpc tcpd
+# CSE 5462 Network Programming
+# NAME
+    ftps ftpc tcpd timer driver
 
-AUTHOR
+# AUTHOR
     Jason Song.988
     Nathan Turner.1019
 
-INSTALL
+# INSTALL
     make
 
-UNINSTALL
+# UNINSTALL
     make clean
 
-USAGE
+# USAGE
     tcpd server|client|port
     ftps [local_port]
     ftpc remote_IP remote_port local_file_to_transfer
     timer
     driver
 
-DESCRIPTION
+# DESCRIPTION
     This is the Project1 for course CSE 5462 Network Programming
 
     ftps will receive the file that ftpc sends
@@ -30,7 +31,7 @@ DESCRIPTION
     timer will listen on a local port, and receive start and cancel timer commands from driver.
     drivr will send test commands to timer on a local port.
 
-FILES
+# FILES
     ftpc.c
     This is the source file for ftpc, which contains the logic to send one file to server.
 
@@ -55,7 +56,7 @@ FILES
     driver.c
     This is the source file for the driver process, which sends start and stop timer commands to the timer process.
 
-TEST
+# TEST
     To run built-in test, simply compile all first with
         make
     Then start the server deamon on server (beta) with
@@ -88,7 +89,6 @@ TEST
 	cd client && ./driver
     The driver will then send commands on a hard-coded local port.
 
-
+# OTHERS
 [a-zA-Z0-9\-\>]*->data
-
 \((struct TimerNodeStruct \*\)($1))
