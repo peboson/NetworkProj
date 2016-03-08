@@ -6,16 +6,9 @@
 #ifndef _TCPUDP_H_
 #define _TCPUDP_H_
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <strings.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "Header.h"
 
-void init_tcpudp(const char * role);
+void InitTcpUdp(const char * TcpdPort);
 int SOCKET(int domain, int type, int protocol);
 int BIND(int sockfd, const struct sockaddr *addr,socklen_t addrlen);
 int LISTEN(int sockfd, int backlog);
@@ -23,7 +16,7 @@ int ACCEPT(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 ssize_t RECV(int sockfd, void *buf, size_t len, int flags);
 int CONNECT(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 ssize_t SEND(int sockfd, const void *buf, size_t len, int flags);
-int CLOSE(int fd);
+int CLOSE(int sockfd);
 
 
 #endif

@@ -1,34 +1,35 @@
-EXE = ftps ftpc
-SRC = ftps.c ftpc.c tcpudp.c
+
 CC = gcc
+GLIB_CFLAGS = $(shell pkg-config --cflags glib-2.0)
+GLIB_LIBS = $(shell pkg-config --libs glib-2.0)
 CC_OPTIONS = -g -Wall
 CS5462 = .
 INCLUDES = -I$(CS5462)
-CFLAGS = $(CC_OPTIONS) $(INCLUDES)
-LIBS = -L$(CS5462)
+CFLAGS = $(CC_OPTIONS) $(INCLUDES) $(GLIB_CFLAGS)
+LIBS = -L$(CS5462) $(GLIB_LIBS)
 OBJ = $(SRC:.c=.o)
 
 .PHONY: all clean test
 
 all: ftps ftpc tcpd timer driver
 	mkdir -p server
-	mv ftps server/
+	cp ftps server/
 	cp tcpd server/
 	mkdir -p client
-	mv ftpc client/
-	mv tcpd client/
-	mv timer client/
-	mv driver client/
+	cp ftpc client/
+	cp tcpd client/
+	cp timer client/
+	cp driver client/
 
-ftps: ftps.o tcpudp.o
+ftps: ftps.o Global.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
-ftpc: ftpc.o tcpudp.o
+ftpc: ftpc.o Global.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
-tcpd: tcpd.o tcpudp.o crc32.o checksum.o
+tcpd: tcpd.o Global.o tcpudp.o crc32.o checksum.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
-timer: timer.o
+timer: timer.o Global.o TimerRequest.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
-driver: driver.o
+driver: driver.o Global.o TimerRequest.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 
 clean: 

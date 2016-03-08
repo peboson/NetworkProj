@@ -16,6 +16,7 @@
 /* client program called with host name where server is run */
 int main(int argc, char *argv[])
 {
+    GlobalInitialize();
     int sock; /* initial socket descriptor */
     int r_val; /* returned value from read */
     int w_val; /* returned value from write */
@@ -41,7 +42,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    init_tcpudp("CLIENT");
+    InitTcpUdp(CLIENT_TCPD_PORT);
 
     /* get send file size without open it */
     unsigned long file_size = -1,file_left=-1;

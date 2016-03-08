@@ -4,6 +4,12 @@
 .png
 .gif
 
+**/ftps
+**/ftpc
+**/tcpd
+**/timer
+**/driver
+
 # Object files
 *.o
 *.ko
