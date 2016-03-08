@@ -42,6 +42,7 @@ struct troll_message_t{
     struct sockaddr_in header;
     uint32_t CRC32;
     size_t len;
+    int seq;
     char body[BUF_LEN];
 };
 #endif

@@ -25,11 +25,19 @@ char roleport[MAX_PATH];
 
 struct hostent *troll_hp; /* troll server host */
 
+struct buffer{
+   char buff[64000];
+   int start;
+   int end;
+   int full;
+}
+
 void tcpd_SOCKET(struct sockaddr_in front_addr,socklen_t front_addr_len);
 void tcpd_BIND(struct sockaddr_in front_addr,socklen_t front_addr_len);
 void tcpd_RECV(struct sockaddr_in front_addr,socklen_t front_addr_len);
 void tcpd_CONNECT(struct sockaddr_in front_addr,socklen_t front_addr_len);
 void tcpd_SEND(struct sockaddr_in front_addr,socklen_t front_addr_len);
+
 int main(int argc, char *argv[]) /* server program called with no argument */
 {
     /* fetch console arguments */
@@ -84,6 +92,11 @@ int main(int argc, char *argv[]) /* server program called with no argument */
 #endif
 
     printf("Server waiting on port # %d\n", ntohs(tcpd_name.sin_port));
+
+struct buffer outbuff;
+outbuff.start=0;
+outbuff.end=0;
+outbuff.full=0;
 
     /* main loop, drived by upper local process */
     while(1){
