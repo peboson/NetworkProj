@@ -13,7 +13,7 @@ struct sockaddr_in tcpd_name;
 struct hostent *tcpd_hp, *gethostbyname();
 char buf[BUF_LEN];
 
-void init_tcpudp(const char * role){
+void InitTcpUdp(const char * TcpdPort){
     /* create socket for connecting to tcp deamon */
     sock = socket(AF_INET, SOCK_DGRAM,0);
     if(sock < 0) {
@@ -22,11 +22,12 @@ void init_tcpudp(const char * role){
     }
     /* construct tcpd_name for connecting to tcpd */
     tcpd_name.sin_family = AF_INET;
-    if(strcmp(role,"SERVER")==0){
-        tcpd_name.sin_port = htons(atoi(SERVER_LOCAL_PORT));
-    }else if(strcmp(role,"CLIENT")==0){
-        tcpd_name.sin_port = htons(atoi(CLIENT_LOCAL_PORT));
-    }
+    // if(strcmp(role,"SERVER")==0){
+    //     tcpd_name.sin_port = htons(atoi(SERVER_LOCAL_PORT));
+    // }else if(strcmp(role,"CLIENT")==0){
+    //     tcpd_name.sin_port = htons(atoi(CLIENT_LOCAL_PORT));
+    // }
+    tcpd_name.sin_port = htons(atoi(TcpdPort));
     /* convert hostname to IP address and enter into name */
     tcpd_hp = gethostbyname("localhost");
     if(tcpd_hp == 0) {
@@ -129,7 +130,29 @@ int LISTEN(int sockfd, int backlog){
 
 int ACCEPT(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     /* return the socket file descriptor on the deamon */
-    return sockfd;
+    g_debug("ACCEPT sockfd:%d",sockfd);
+    struct sockaddr_in TcpdRecvAddr;
+    socklen_t TcpdRecvAddrLength;
+    int ret;
+
+    g_debug("Sending ACCEPT tcpd message ...");
+    char TcpdMsg[TCPD_MSG_LEN]="ACCEPT";
+    if(sendto(sock, TcpdMsg, TCPD_MSG_LEN, 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+        perror("error sending ACCEPT Tcpd Msg");
+        exit(4);
+    }
+
+    g_debug("Receiving ACCEPT result from tcpd ...");
+    bzero(buf, sizeof(int));
+    TcpdRecvAddrLength=sizeof(TcpdRecvAddr);
+    if(recvfrom(sock, buf, sizeof(int), MSG_WAITALL, (struct sockaddr *)&TcpdRecvAddr, &TcpdRecvAddrLength ) < 0) {
+        perror("error receiving ACCEPT return");
+        exit(5);
+    }
+    bcopy(buf,(char *)&ret,sizeof(int));
+
+    g_info("ACCEPT return: %d\n",ret);
+    return ret;
 }
 
 ssize_t RECV(int sockfd, void *buffer, size_t len, int flags){

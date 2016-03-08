@@ -1,2 +1,2 @@
-#include <glib.h>
+#include "Header.h"
 void GlobalInitialize();

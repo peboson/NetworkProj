@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     printf("TCP server waiting for remote connection from clients ...\n");
-    init_tcpudp("SERVER");
+    InitTcpUdp(SERVER_TCPD_PORT);
 
     /*initialize socket connection in unix domain*/
     if((sock = SOCKET(AF_INET, SOCK_STREAM, 0)) < 0){

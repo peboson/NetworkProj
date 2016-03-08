@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    init_tcpudp("CLIENT");
+    InitTcpUdp(CLIENT_TCPD_PORT);
 
     /* get send file size without open it */
     unsigned long file_size = -1,file_left=-1;

@@ -4,12 +4,11 @@
 .png
 .gif
 
-*/server/ftps
-*/server/tcpd
-*/client/ftpc
-*/client/tcpd
-*/client/timer
-*/client/driver
+**/ftps
+**/ftpc
+**/tcpd
+**/timer
+**/driver
 
 # Object files
 *.o
