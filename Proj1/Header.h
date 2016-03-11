@@ -54,7 +54,15 @@ struct TrollMessageStruct{
 };
 #define troll_message_t TrollMessageStruct
 #define CRC32 CheckSum
-#define CheckSumOffset (sizeof(uint32_t)+sizeof(uint32_t)+sizeof(size_t))
+#define CheckSumOffset (sizeof(struct sockaddr_in)+sizeof(uint32_t))
+struct TrollAckStruct{
+    struct sockaddr_in header;
+    uint32_t CheckSum;
+    uint32_t Session;
+    uint32_t SeqNum;
+};
+#define TrollAckCheckSumOffset (sizeof(struct sockaddr_in)+sizeof(uint32_t))
+
 #endif
 
 #endif

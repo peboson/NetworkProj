@@ -35,7 +35,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"USAGE: ftps [local_port]\n");
         exit(1);
     }
-    printf("TCP server waiting for remote connection from clients ...\n");
+    g_info("TCP server waiting for remote connection from clients ...\n");
     InitTcpUdp(SERVER_TCPD_PORT);
 
     /*initialize socket connection in unix domain*/
@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
 
     /* listen for socket connection and set max opened socket connetions to 5 */
     LISTEN(sock, 5);
-    printf("Listen on port %s\n",port);
+    g_info("Listen on port %s\n",port);
 
     while(1){
         int sock_client; /* client socket descriptor */
@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
             exit(1);
         }
         file_size=(buf_in[0]<<24)|(buf_in[1]<<16)|(buf_in[2]<<8)|(buf_in[3]);
-        printf("file size: %u bytes\n", file_size);
+        g_info("file size: %u bytes\n", file_size);
 
         /* read file_name from sock_client */
         r_val=RECV(sock_client, buf_in, 20, MSG_WAITALL);
@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
         }
         buf_in[r_val]=0;
         strcpy(file_name,(const char *)buf_in);
-        printf("file name: %s\n", file_name);
+        g_info("file name: %s\n", file_name);
 
         /* get local file descriptor */
         recv_file=fopen(file_name,"wb");
@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
             /* update left bytes */
             file_left=file_left-r_val;
         }
-        printf("Server receives: %u bytes\n", file_size);
+        g_info("Server receives: %u bytes\n", file_size);
 
         /* close client connection and file */
         CLOSE(sock_client);

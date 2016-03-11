@@ -9,7 +9,7 @@
 
 int sock=-1;
 int buflen;
-struct sockaddr_in tcpd_name;
+struct sockaddr_in TcpdAddr;
 struct hostent *tcpd_hp, *gethostbyname();
 char buf[BUF_LEN];
 
@@ -20,49 +20,49 @@ void InitTcpUdp(const char * TcpdPort){
         perror("opening datagram socket");
         exit(2);
     }
-    /* construct tcpd_name for connecting to tcpd */
-    tcpd_name.sin_family = AF_INET;
+    /* construct TcpdAddr for connecting to tcpd */
+    TcpdAddr.sin_family = AF_INET;
     // if(strcmp(role,"SERVER")==0){
-    //     tcpd_name.sin_port = htons(atoi(SERVER_LOCAL_PORT));
+    //     TcpdAddr.sin_port = htons(atoi(SERVER_LOCAL_PORT));
     // }else if(strcmp(role,"CLIENT")==0){
-    //     tcpd_name.sin_port = htons(atoi(CLIENT_LOCAL_PORT));
+    //     TcpdAddr.sin_port = htons(atoi(CLIENT_LOCAL_PORT));
     // }
-    tcpd_name.sin_port = htons(atoi(TcpdPort));
+    TcpdAddr.sin_port = htons(atoi(TcpdPort));
     /* convert hostname to IP address and enter into name */
     tcpd_hp = gethostbyname("localhost");
     if(tcpd_hp == 0) {
         perror("localhost: unknown host\n");
         exit(3);
     }
-    bcopy((char *)tcpd_hp->h_addr, (char *)&tcpd_name.sin_addr, tcpd_hp->h_length);
+    bcopy((char *)tcpd_hp->h_addr, (char *)&TcpdAddr.sin_addr, tcpd_hp->h_length);
 }
 
 int SOCKET(int domain, int type, int protocol){
     /* deamon tcp function call of SOCKET */
-    printf("SOCKET domain:%d, type:%d, protocol:%d\n",domain,type,protocol);
+    g_info("SOCKET domain:%d, type:%d, protocol:%d\n",domain,type,protocol);
     struct sockaddr_in server_addr;
     socklen_t server_addr_len;
     int ret;
 
     /* send message to deamon */
     char tcpd_msg[TCPD_MSG_LEN]="SOCKET";
-    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending SOCKET tcpd_msg");
         exit(4);
     }
 
     /* send SOCKET arguments to tcpd */
-    // if(sendto(sock, (char *)&domain, sizeof(int), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    // if(sendto(sock, (char *)&domain, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
     //     perror("error sending SOCKET domain");
     //     exit(4);
     // }
 
-    // if(sendto(sock, (char *)&type, sizeof(int), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    // if(sendto(sock, (char *)&type, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
     //     perror("error sending SOCKET type");
     //     exit(4);
     // }
 
-    // if(sendto(sock, (char *)&protocol, sizeof(int), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    // if(sendto(sock, (char *)&protocol, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
     //     perror("error sending SOCKET protocol");
     //     exit(4);
     // }
@@ -76,36 +76,36 @@ int SOCKET(int domain, int type, int protocol){
     }
     bcopy(buf,(char *)&ret,sizeof(int));
 
-    printf("SOCKET return: %d\n",ret);
+    g_info("SOCKET return: %d\n",ret);
     return ret;
 }
 
 int BIND(int sockfd, const struct sockaddr *addr,socklen_t addrlen){
     /* deamon tcp function call of BIND */
-    printf("BIND sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d\n",sockfd,((const struct sockaddr_in *)addr)->sin_port,(unsigned long)((const struct sockaddr_in *)addr)->sin_addr.s_addr,addrlen);
+    g_info("BIND sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d\n",sockfd,((const struct sockaddr_in *)addr)->sin_port,(unsigned long)((const struct sockaddr_in *)addr)->sin_addr.s_addr,addrlen);
     struct sockaddr_in server_addr;
     socklen_t server_addr_len;
     int ret;
 
     /* send message to deamon */
     char tcpd_msg[TCPD_MSG_LEN]="BIND";
-    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending BIND tcpd_msg");
         exit(4);
     }
 
     /* send BIND arguments to tcpd */
-    if(sendto(sock, (char *)&sockfd, sizeof(int), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, (char *)&sockfd, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending BIND sockfd");
         exit(4);
     }
 
-    if(sendto(sock, (char *)addr, sizeof(struct sockaddr_in), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, (char *)addr, sizeof(struct sockaddr_in), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending BIND addr");
         exit(4);
     }
 
-    // if(sendto(sock, (char *)&addrlen, sizeof(addrlen), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    // if(sendto(sock, (char *)&addrlen, sizeof(addrlen), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
     //     perror("error sending BIND addrlen");
     //     exit(4);
     // }
@@ -119,7 +119,7 @@ int BIND(int sockfd, const struct sockaddr *addr,socklen_t addrlen){
     }
     bcopy(buf,(char *)&ret,sizeof(int));
 
-    printf("BIND return: %d\n",ret);
+    g_info("BIND return: %d\n",ret);
     return ret;
 }
 
@@ -130,15 +130,20 @@ int LISTEN(int sockfd, int backlog){
 
 int ACCEPT(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     /* return the socket file descriptor on the deamon */
-    g_debug("ACCEPT sockfd:%d",sockfd);
+    g_info("ACCEPT sockfd:%d",sockfd);
     struct sockaddr_in TcpdRecvAddr;
     socklen_t TcpdRecvAddrLength;
     int ret;
 
     g_debug("Sending ACCEPT tcpd message ...");
     char TcpdMsg[TCPD_MSG_LEN]="ACCEPT";
-    if(sendto(sock, TcpdMsg, TCPD_MSG_LEN, 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, TcpdMsg, TCPD_MSG_LEN, 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending ACCEPT Tcpd Msg");
+        exit(4);
+    }
+    
+    if(sendto(sock, (char *)&sockfd, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
+        perror("error sending BIND sockfd");
         exit(4);
     }
 
@@ -156,29 +161,29 @@ int ACCEPT(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
 }
 
 ssize_t RECV(int sockfd, void *buffer, size_t len, int flags){
-    printf("RECV sockfd:%d, len:%zu, flags:%d\n",sockfd,len,flags);
+    g_info("RECV sockfd:%d, len:%zu, flags:%d\n",sockfd,len,flags);
     struct sockaddr_in server_addr;
     socklen_t server_addr_len;
     ssize_t ret;
 
     /* send message to deamon */
     char tcpd_msg[TCPD_MSG_LEN]="RECV";
-    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending RECV tcpd_msg");
         exit(4);
     }
 
-    if(sendto(sock, (char *)&sockfd, sizeof(int), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, (char *)&sockfd, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending RECV sockfd");
         exit(4);
     }
 
-    if(sendto(sock, (char *)&len, sizeof(size_t), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, (char *)&len, sizeof(size_t), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending RECV len");
         exit(4);
     }
 
-    // if(sendto(sock, (char *)&flags, sizeof(int), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    // if(sendto(sock, (char *)&flags, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
     //     perror("error sending RECV flags");
     //     exit(4);
     // }
@@ -191,34 +196,34 @@ ssize_t RECV(int sockfd, void *buffer, size_t len, int flags){
     //     exit(5);
     // }
 
-    printf("RECV return %zd\n",ret);
+    g_info("RECV return %zd\n",ret);
     return ret;
 }
 
 int CONNECT(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
-    printf("CONNECT sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d\n",sockfd,((const struct sockaddr_in *)addr)->sin_port,(unsigned long)((const struct sockaddr_in *)addr)->sin_addr.s_addr,addrlen);
+    g_info("CONNECT sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d\n",sockfd,((const struct sockaddr_in *)addr)->sin_port,(unsigned long)((const struct sockaddr_in *)addr)->sin_addr.s_addr,addrlen);
     struct sockaddr_in server_addr;
     socklen_t server_addr_len;
     int ret;
 
     /* send message to deamon */
     char tcpd_msg[TCPD_MSG_LEN]="CONNECT";
-    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending CONNECT tcpd_msg");
         exit(4);
     }
 
-    if(sendto(sock, (char *)&sockfd, sizeof(int), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, (char *)&sockfd, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending CONNECT sockfd");
         exit(4);
     }
 
-    if(sendto(sock, (char *)addr, sizeof(struct sockaddr_in), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, (char *)addr, sizeof(struct sockaddr_in), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending CONNECT addr");
         exit(4);
     }
 
-    // if(sendto(sock, (char *)&addrlen, sizeof(addrlen), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    // if(sendto(sock, (char *)&addrlen, sizeof(addrlen), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
     //     perror("error sending BIND addrlen");
     //     exit(4);
     // }
@@ -232,39 +237,39 @@ int CONNECT(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
     }
     bcopy(buf,(char *)&ret,sizeof(int));
 
-    printf("CONNECT return: %d\n",ret);
+    g_info("CONNECT return: %d\n",ret);
     return ret;
 }
 ssize_t SEND(int sockfd, const void *buffer, size_t len, int flags){
-    printf("SEND sockfd:%d, len:%zu, flags:%d\n",sockfd,len,flags);
+    g_info("SEND sockfd:%d, len:%zu, flags:%d\n",sockfd,len,flags);
     struct sockaddr_in server_addr;
     socklen_t server_addr_len;
     ssize_t ret;
 
     /* send message to deamon */
     char tcpd_msg[TCPD_MSG_LEN]="SEND";
-    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, tcpd_msg, TCPD_MSG_LEN, 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending SEND tcpd_msg");
         exit(4);
     }
 
-    if(sendto(sock, (char *)&sockfd, sizeof(int), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, (char *)&sockfd, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending SEND sockfd");
         exit(4);
     }
 
-    if(sendto(sock, (char *)&len, sizeof(size_t), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, (char *)&len, sizeof(size_t), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending SEND len");
         exit(4);
     }
 
-    // if(sendto(sock, (char *)&flags, sizeof(int), 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    // if(sendto(sock, (char *)&flags, sizeof(int), 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
     //     perror("error sending SEND flags");
     //     exit(4);
     // }
 
     /* send out package to deamon */
-    if(sendto(sock, buffer, len, 0, (struct sockaddr *)&tcpd_name, sizeof(tcpd_name)) <0) {
+    if(sendto(sock, buffer, len, 0, (struct sockaddr *)&TcpdAddr, sizeof(TcpdAddr)) <0) {
         perror("error sending SEND buffer");
         exit(4);
     }
@@ -278,7 +283,7 @@ ssize_t SEND(int sockfd, const void *buffer, size_t len, int flags){
     }
     bcopy(buf,(char *)&ret,sizeof(ssize_t));
 
-    printf("SEND return: %zd\n",ret);
+    g_info("SEND return: %zd\n",ret);
     return ret;
 }
 
