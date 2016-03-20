@@ -523,15 +523,16 @@ ERRCODE SolveSendCallback(){
     int ConnectedSocketSocketFD;
     struct ConnectedSocketStruct *TmpConnectedSocket;
     g_hash_table_iter_init (&ConnectedSocketIter, ConnectedSockets);
-    while (g_hash_table_iter_next (&ConnectedSocketIter,(void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket))
+    while (g_hash_table_iter_next (&ConnectedSocketIter,(void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket)!=FALSE)
     {
         g_debug("Updating MinSeq of ConnectedSocket");
         TmpConnectedSocket->MinSeq=100000000;
-        for(GList *l=TmpConnectedSocket->Packages;l!=NULL;l=l->next){
+        GList *l;
+        for(l=TmpConnectedSocket->Packages;l!=NULL;l=l->next){
             struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
             TmpConnectedSocket->MinSeq=TmpTrollMessage->SeqNum<TmpConnectedSocket->MinSeq?TmpTrollMessage->SeqNum:TmpConnectedSocket->MinSeq;
         }
-        GList *l=TmpConnectedSocket->PendingPackages;
+        l=TmpConnectedSocket->PendingPackages;
         while(l!=NULL){
             g_debug("Sending one pending package ...");
             GList *lnext=l->next;
