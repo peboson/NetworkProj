@@ -55,6 +55,7 @@ struct ConnectedSocketStruct{
     int SocketFD;
     uint32_t Session;
     uint32_t Base;
+    uint32_t MinSeq;
     struct sockaddr_in ServerAddr;
     GList *Packages;
     GList *PendingPackages;
@@ -277,10 +278,8 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
         return -2;
     }
     g_debug("Finding Accepted socket with session %u",NowTrollMessage->Session);
-    struct AcceptedSocketStruct *NowAcceptedSocket=NULL;
-    if(g_hash_table_contains(AcceptedSockets,GUINT_TO_POINTER(NowTrollMessage->Session))){
-        NowAcceptedSocket=g_hash_table_lookup(AcceptedSockets,GUINT_TO_POINTER(NowTrollMessage->Session));
-    }else{
+    struct AcceptedSocketStruct *NowAcceptedSocket=g_hash_table_lookup(AcceptedSockets,GUINT_TO_POINTER(NowTrollMessage->Session));
+    if(NowAcceptedSocket==NULL){
         GList *l;
         for(l=WaitingAcceptSocketsList;l!=NULL;l=l->next){
             if(((struct AcceptedSocketStruct *)(l->data))->Session==NowTrollMessage->Session){
@@ -526,9 +525,21 @@ ERRCODE SolveSendCallback(){
     g_hash_table_iter_init (&ConnectedSocketIter, ConnectedSockets);
     while (g_hash_table_iter_next (&ConnectedSocketIter,(void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket))
     {
-        while(TmpConnectedSocket->PendingPackages!=NULL){
+        g_debug("Updating MinSeq of ConnectedSocket");
+        TmpConnectedSocket->MinSeq=100000000;
+        for(GList *l=TmpConnectedSocket->Packages;l!=NULL;l=l->next){
+            struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
+            TmpConnectedSocket->MinSeq=TmpTrollMessage->SeqNum<TmpConnectedSocket->MinSeq?TmpTrollMessage->SeqNum:TmpConnectedSocket->MinSeq;
+        }
+        GList *l=TmpConnectedSocket->PendingPackages;
+        while(l!=NULL){
             g_debug("Sending one pending package ...");
-            struct TrollMessageStruct *NowTrollMessage=(struct TrollMessageStruct *)(g_list_first(TmpConnectedSocket->PendingPackages)->data);
+            GList *lnext=l->next;
+            struct TrollMessageStruct *NowTrollMessage=(struct TrollMessageStruct *)(l->data);
+            if(NowTrollMessage->SeqNum>=TmpConnectedSocket->MinSeq+MAX_BUFFER_PACKAGES){
+                l=lnext;
+                continue;
+            }
             g_info("Sending package Addr:%s, Port:%u, SeqNum:%u (Session:%u)",inet_ntoa(NowTrollMessage->header.sin_addr),ntohs(NowTrollMessage->header.sin_port),NowTrollMessage->SeqNum,NowTrollMessage->Session);
             ssize_t SendRet=sendto(TmpConnectedSocket->SocketFD, (void *)NowTrollMessage, sizeof(*NowTrollMessage), MSG_WAITALL, (struct sockaddr *)&TrollAddr, sizeof(TrollAddr));
             if(SendRet < 0) {
@@ -536,13 +547,34 @@ ERRCODE SolveSendCallback(){
                 exit(5);
             }
             TmpConnectedSocket->Packages= g_list_append(TmpConnectedSocket->Packages,NowTrollMessage);
-            TmpConnectedSocket->PendingPackages=g_list_remove_link(TmpConnectedSocket->PendingPackages,g_list_first(TmpConnectedSocket->PendingPackages));
+            TmpConnectedSocket->PendingPackages=g_list_remove_link(TmpConnectedSocket->PendingPackages,l);
             g_debug("Send timer request");
             SendTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollMessage->Session,NowTrollMessage->SeqNum,10);
-            g_debug("Delay 100usec to avoid blocking local udp transmission...");
-            usleep(100);
+            g_debug("Delay 1000usec to avoid blocking local udp transmission...");
+            usleep(1000);
             // sleep(1);
+            l=lnext;
         }
+        // while(TmpConnectedSocket->PendingPackages!=NULL){
+        //     g_debug("Sending one pending package ...");
+        //     struct TrollMessageStruct *NowTrollMessage=(struct TrollMessageStruct *)(g_list_first(TmpConnectedSocket->PendingPackages)->data);
+        //     if(NowTrollMessage->SeqNum>=TmpConnectedSocket->MinSeq+MAX_BUFFER_PACKAGES){
+        //         continue;
+        //     }
+        //     g_info("Sending package Addr:%s, Port:%u, SeqNum:%u (Session:%u)",inet_ntoa(NowTrollMessage->header.sin_addr),ntohs(NowTrollMessage->header.sin_port),NowTrollMessage->SeqNum,NowTrollMessage->Session);
+        //     ssize_t SendRet=sendto(TmpConnectedSocket->SocketFD, (void *)NowTrollMessage, sizeof(*NowTrollMessage), MSG_WAITALL, (struct sockaddr *)&TrollAddr, sizeof(TrollAddr));
+        //     if(SendRet < 0) {
+        //         perror("error sending buffer to troll");
+        //         exit(5);
+        //     }
+        //     TmpConnectedSocket->Packages= g_list_append(TmpConnectedSocket->Packages,NowTrollMessage);
+        //     TmpConnectedSocket->PendingPackages=g_list_remove_link(TmpConnectedSocket->PendingPackages,g_list_first(TmpConnectedSocket->PendingPackages));
+        //     g_debug("Send timer request");
+        //     SendTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollMessage->Session,NowTrollMessage->SeqNum,10);
+        //     g_debug("Delay 1000usec to avoid blocking local udp transmission...");
+        //     usleep(1000);
+        //     // sleep(1);
+        // }
     }
     g_debug("Solve Send Callback done.");
     return 0;
@@ -798,7 +830,8 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
         return -1;
     }
     uint32_t Session=sockfd;
-    if(!g_hash_table_contains(AcceptedSockets,GUINT_TO_POINTER(Session))){
+    struct AcceptedSocketStruct *NowAcceptedSocket =g_hash_table_lookup(AcceptedSockets,GUINT_TO_POINTER(Session));
+    if(NowAcceptedSocket==NULL){
         g_message("No accepted session with %u",Session);
         RecvRet=-2;
         if(sendto(sock, (char *)&RecvRet, sizeof(int), 0, (struct sockaddr *)&FrontAddr, sizeof(FrontAddr)) <0) {
@@ -807,7 +840,6 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
         }
         return -1;
     }
-    struct AcceptedSocketStruct *NowAcceptedSocket =g_hash_table_lookup(AcceptedSockets,GUINT_TO_POINTER(Session));
     if(NowAcceptedSocket->ReceivingLength!=0){
         g_message("Already waiting on session %u",Session);
         RecvRet=-3;
@@ -920,6 +952,7 @@ ERRCODE tcpd_CONNECT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     NowConnectedSocket->SocketFD=sockfd;
     NowConnectedSocket->Session=rand();
     NowConnectedSocket->Base=0;
+    NowConnectedSocket->MinSeq=0;
     NowConnectedSocket->Packages=NULL;
     NowConnectedSocket->PendingPackages=NULL;
     NowConnectedSocket->ServerAddr=addr;
@@ -982,10 +1015,8 @@ ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_info("SEND sockfd:%d, len:%zu",sockfd,len);
 
     g_debug("Find connected socket struct ...");
-    struct ConnectedSocketStruct * NowConnectedSocket=NULL;
-    if(g_hash_table_contains(ConnectedSockets,GINT_TO_POINTER(sockfd))){
-        NowConnectedSocket=g_hash_table_lookup(ConnectedSockets,GINT_TO_POINTER(sockfd));
-    }else{
+    struct ConnectedSocketStruct * NowConnectedSocket=g_hash_table_lookup(ConnectedSockets,GINT_TO_POINTER(sockfd));
+    if(NowConnectedSocket==NULL){
         perror("Socket not connected");
         exit(1);
     }

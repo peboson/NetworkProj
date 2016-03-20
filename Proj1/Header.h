@@ -67,4 +67,46 @@ struct TrollAckStruct{
 
 #endif
 
+#define GLIB_VERSION_UPGRADE
+
+#ifndef g_error
+#define g_error(...)  G_STMT_START {                 \
+                        g_log (G_LOG_DOMAIN,         \
+                               G_LOG_LEVEL_ERROR,    \
+                               __VA_ARGS__);         \
+                        for (;;) ;                   \
+                      } G_STMT_END
+#endif
+                        
+#ifndef g_message
+#define g_message(...)  g_log (G_LOG_DOMAIN,         \
+                               G_LOG_LEVEL_MESSAGE,  \
+                               __VA_ARGS__)
+#endif
+
+#ifndef g_critical
+#define g_critical(...) g_log (G_LOG_DOMAIN,         \
+                               G_LOG_LEVEL_CRITICAL, \
+                               __VA_ARGS__)
+#endif
+
+#ifndef g_warning
+#define g_warning(...)  g_log (G_LOG_DOMAIN,         \
+                               G_LOG_LEVEL_WARNING,  \
+                               __VA_ARGS__)
+#endif
+
+#ifndef g_info
+#define g_info(...)     g_log (G_LOG_DOMAIN,         \
+                               G_LOG_LEVEL_INFO,     \
+                               __VA_ARGS__)
+#endif
+
+#ifndef g_debug
+#define g_debug(...)    g_log (G_LOG_DOMAIN,         \
+                               G_LOG_LEVEL_DEBUG,    \
+                               __VA_ARGS__)
+#endif
+
+
 #endif
