@@ -25,11 +25,13 @@
 
 #define CLIENT_PUBLIC_PORT "8100"
 #define CLIENT_TCPD_PORT "8101"
+
 #define TIMER_PORT "8080"
 
 #define TCPD_MSG_LEN 8
 #define BUF_LEN 1000
 #define MAX_PATH 260
+#define MAX_BUFFER_PACKAGES 100
 
 #define CHECKSUM_ALGORITHM crc32
 

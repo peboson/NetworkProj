@@ -25,7 +25,10 @@ struct sockaddr_in TrollAddr;
 socklen_t tcpd_name_len;
 char roleport[MAX_PATH];
 
-struct hostent *troll_hp; /* troll server host */
+struct hostent *LocalHostEnt; /* troll server host */
+
+int TimerDriverSocket;
+struct sockaddr_in TimerAddr;
 
 struct BindedSocketStruct {
     int SocketFD;
@@ -39,7 +42,11 @@ struct AcceptedSocketStruct{
     int SocketFD;
     uint32_t Session;
     uint32_t Base;
+    size_t ReceivingLength;
+    struct sockaddr_in ReceivingAddr;
     GList *Packages;
+    char RecvBuffer[BUF_LEN];
+    size_t RecvBufferSize;
 };
 GHashTable *AcceptedSockets;
 GList *WaitingAcceptSocketsList;
@@ -56,6 +63,7 @@ GHashTable *ConnectedSockets;
 
 ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket);
 ERRCODE RecvAck(struct ConnectedSocketStruct *NowConnectedSocket);
+ERRCODE RecvTimer();
 ERRCODE SolveAcceptCallback();
 ERRCODE SolveRecvCallback();
 ERRCODE SolveSendCallback();
@@ -67,7 +75,7 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength);
 ERRCODE tcpd_CONNECT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength);
 ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength);
 
-int sentpackages=0;
+int InBufferPackages=0;
 
 int main(int argc, char *argv[]) /* server program called with no argument */
 {
@@ -79,7 +87,7 @@ int main(int argc, char *argv[]) /* server program called with no argument */
     if(argc==2){
         strcpy(roleport,argv[1]);
     }else{
-        g_warning("USAGE: ftpd server|client|port\n");
+        g_warning("USAGE: ftpd server|client|port");
         exit(1);
     }
 
@@ -113,20 +121,35 @@ int main(int argc, char *argv[]) /* server program called with no argument */
         exit(3);
     }
 
-#ifdef __WITH_TROLL
-    /* fetch troll server host via host name (local host) */
-    troll_hp = gethostbyname("localhost");
-    if(troll_hp == 0) {
-        g_warning( "unknown host: localhost\n");
-        exit(2);
+    g_debug("Fetching localhost entity");
+    LocalHostEnt = gethostbyname("localhost");
+    if(LocalHostEnt == NULL) {
+        perror("localhost: unknown host");
+        exit(3);
     }
+
+#ifdef __WITH_TROLL
     /* construct name of socket to send to */
-    bcopy((void *)troll_hp->h_addr, (void *)&TrollAddr.sin_addr, troll_hp->h_length);
     TrollAddr.sin_family = AF_INET;
+    bcopy((void *)LocalHostEnt->h_addr, (void *)&TrollAddr.sin_addr, LocalHostEnt->h_length);
     TrollAddr.sin_port = htons(atoi(TROLL_PORT));
 #endif
 
-    g_info("Server waiting on port # %d\n", ntohs(tcpd_name.sin_port));
+    g_info("Server waiting on port # %d", ntohs(tcpd_name.sin_port));
+
+    g_debug("Setting up timer ...");
+    g_debug("Constructing driver socket ...");
+    TimerDriverSocket=socket(AF_INET, SOCK_DGRAM, 0);
+    if(TimerDriverSocket<0){
+        perror("error opening driver socket");
+        exit(1);
+    }
+    g_info("Constructed driver socket with fd %d",TimerDriverSocket);
+    g_debug("Initializing Timer Addr ...");
+    char TimerPort[8]=TIMER_PORT;
+    TimerAddr.sin_family = AF_INET;
+    bcopy((char *)LocalHostEnt ->h_addr, (char *)&TimerAddr.sin_addr, LocalHostEnt ->h_length);
+    TimerAddr.sin_port = htons(atoi(TimerPort));
 
     /* main loop, drived by upper local process */
     fd_set WaitingSocketSet;
@@ -134,8 +157,12 @@ int main(int argc, char *argv[]) /* server program called with no argument */
         g_debug("#################### NEXT ROUND ####################");
         g_debug("Filling waiting sockets set ...");
         FD_ZERO(&WaitingSocketSet);
-        FD_SET(TcpdMsgSocket,&WaitingSocketSet);
-        int MaxSocket=TcpdMsgSocket;
+        FD_SET(TimerDriverSocket,&WaitingSocketSet);
+        int MaxSocket=TimerDriverSocket;
+        if(InBufferPackages<MAX_BUFFER_PACKAGES){
+            FD_SET(TcpdMsgSocket,&WaitingSocketSet);
+            MaxSocket=TcpdMsgSocket>MaxSocket?TcpdMsgSocket:MaxSocket;
+        }
         uint i;
         for(i=0;i<BindedSockets->len;i++){
             struct BindedSocketStruct *TmpBindedSocket=g_array_index(BindedSockets,struct BindedSocketStruct *,i);
@@ -170,7 +197,7 @@ int main(int argc, char *argv[]) /* server program called with no argument */
                     perror("error receiving"); 
                     exit(4);
                 }
-                g_debug("Server receives: %s\n", tcpd_msg);
+                g_debug("Server receives: %s", tcpd_msg);
                 /* switch by the function */
                 if(strcmp(tcpd_msg,"SOCKET")==0){
                     tcpd_SOCKET(FrontAddr,FrontAddrLength);
@@ -203,6 +230,10 @@ int main(int argc, char *argv[]) /* server program called with no argument */
                     RecvAck(TmpConnectedSocket);
                 }
             }
+            if(FD_ISSET(TimerDriverSocket,&WaitingSocketSet)){
+                g_debug("Receiving timer expired request");
+                RecvTimer();
+            }
         }
         SolveAcceptCallback();
         SolveRecvCallback();
@@ -231,18 +262,18 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
     NowTrollMessage->header=ClientAddr;
 #endif
     if(RecvRet< 0) {
-        perror("error receiving RECV");
+        perror("error receiving Data");
         exit(5);
     }   
     // g_debug("Checking package length is garbled or not ...");
     // if(NowTrollMessage->len>sizeof(NowTrollMessage->body)){
-    //     g_info("[GARBLED] Length:%zu\n",NowTrollMessage->len);
+    //     g_info("[GARBLED] Length:%zu",NowTrollMessage->len);
     //     return -1;
     // }
     g_debug("Checking package body is garbled or not ...");
     uint32_t CheckSum=CHECKSUM_ALGORITHM(0,((char *)(NowTrollMessage))+CheckSumOffset,sizeof(*NowTrollMessage)-CheckSumOffset);
     if(CheckSum!=NowTrollMessage->CheckSum){
-        g_info("[GARBLED] CheckSum: %u, Origin CheckSum: %u\n", CheckSum, NowTrollMessage->CheckSum);
+        g_info("[GARBLED] CheckSum: %u, Origin CheckSum: %u", CheckSum, NowTrollMessage->CheckSum);
         return -2;
     }
     g_debug("Finding Accepted socket with session %u",NowTrollMessage->Session);
@@ -265,6 +296,8 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
         NowAcceptedSocket->Session=NowTrollMessage->Session;
         NowAcceptedSocket->Base=0;
         NowAcceptedSocket->Packages=NULL;
+        NowAcceptedSocket->ReceivingLength=0;
+        NowAcceptedSocket->RecvBufferSize=0;
         WaitingAcceptSocketsList=g_list_append(WaitingAcceptSocketsList,NowAcceptedSocket);
     }
 
@@ -325,14 +358,14 @@ ERRCODE RecvAck(struct ConnectedSocketStruct *NowConnectedSocket){
     NowTrollAck->header=ClientAddr;
 #endif
     if(RecvRet< 0) {
-        perror("error receiving RECV");
+        perror("error receiving Ack");
         exit(5);
     }   
     g_debug("Checking package body is garbled or not ...");
     uint32_t CheckSum=CHECKSUM_ALGORITHM(0,((char *)(NowTrollAck))+CheckSumOffset,sizeof(*NowTrollAck)-CheckSumOffset);
     g_info("Received Ack SeqNum:%u (Session:%u)",NowTrollAck->SeqNum,NowTrollAck->Session);
     if(CheckSum!=NowTrollAck->CheckSum){
-        g_info("[GARBLED] CheckSum: %u, Origin CheckSum: %u\n", CheckSum, NowTrollAck->CheckSum);
+        g_info("[GARBLED] CheckSum: %u, Origin CheckSum: %u", CheckSum, NowTrollAck->CheckSum);
         return -2;
     }
     g_debug("Removing Ack package with SeqNum %u (Session %u) ...",NowTrollAck->SeqNum,NowTrollAck->Session);
@@ -341,10 +374,57 @@ ERRCODE RecvAck(struct ConnectedSocketStruct *NowConnectedSocket){
         struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
         if(TmpTrollMessage->Session==NowTrollAck->Session&&TmpTrollMessage->SeqNum==NowTrollAck->SeqNum){
             NowConnectedSocket->Packages=g_list_remove_link(NowConnectedSocket->Packages,l);
+            InBufferPackages--;
+            free(TmpTrollMessage);
             g_info("Package SeqNum %u removed. (Session %u)",TmpTrollMessage->SeqNum,TmpTrollMessage->Session);
             break;
         }
     }
+    g_debug("Sending cancel timer request with SeqNum %u (Session %u) ...",NowTrollAck->SeqNum,NowTrollAck->Session);
+    CancelTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollAck->Session,NowTrollAck->SeqNum);
+    free(NowTrollAck);
+    return 0;
+}
+
+ERRCODE RecvTimer(){
+    g_debug("Receiving Timer Expired request ...");
+    struct TimerExpiredStruct *NowExpired=(struct TimerExpiredStruct *)malloc(sizeof(struct TimerExpiredStruct ));
+    struct sockaddr_in RemoteTimerAddr;
+    socklen_t RemoteTimerAddrLength=sizeof(RemoteTimerAddr);
+    ssize_t RecvRet=recvfrom(TimerDriverSocket, (void *)NowExpired, sizeof(*NowExpired), MSG_WAITALL, (struct sockaddr *)&RemoteTimerAddr, &RemoteTimerAddrLength);
+    if(RecvRet< 0) {
+        perror("error receiving Timer Expired");
+        exit(5);
+    }   
+    g_debug("Finding connected socket for timer expired ...");
+    struct ConnectedSocketStruct * NowConnectedSocket=NULL;
+    GHashTableIter ConnectedSocketIter;
+    int ConnectedSocketSocketFD;
+    struct ConnectedSocketStruct *TmpConnectedSocket;
+    g_hash_table_iter_init (&ConnectedSocketIter, ConnectedSockets);
+    while (g_hash_table_iter_next (&ConnectedSocketIter, (void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket))
+    {
+        if(TmpConnectedSocket->Session==NowExpired->Session){
+            NowConnectedSocket=TmpConnectedSocket;
+            break;
+        }
+    }
+    if(NowConnectedSocket==NULL){
+        perror("socket not found");
+        exit(5);
+    }
+    g_debug("Moving expired package to pending sequence ...");
+    GList *l;
+    for(l=NowConnectedSocket->Packages;l!=NULL;l=l->next){
+        struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
+        if(TmpTrollMessage->Session==NowExpired->Session&&TmpTrollMessage->SeqNum==NowExpired->SeqNum){
+            NowConnectedSocket->Packages=g_list_remove_link(NowConnectedSocket->Packages,l);
+            NowConnectedSocket->PendingPackages= g_list_append(NowConnectedSocket->PendingPackages,TmpTrollMessage);
+            g_info("Package SeqNum %u goint to resend. (Session %u)",TmpTrollMessage->SeqNum,TmpTrollMessage->Session);
+            break;
+        }
+    }
+    g_debug("Recv Timer done.");
     return 0;
 }
 
@@ -382,7 +462,59 @@ ERRCODE SolveAcceptCallback(){
 }
 
 ERRCODE SolveRecvCallback(){
-    g_debug("[NOT IMPLEMENT] TODO: Sending Recv Callbacks ...");
+    g_debug("Sending Recv Callbacks ...");
+    GHashTableIter AcceptedSocketIter;
+    int AcceptedSocketSession;
+    struct AcceptedSocketStruct *TmpAcceptedSocket;
+    g_hash_table_iter_init (&AcceptedSocketIter, AcceptedSockets);
+    while (g_hash_table_iter_next (&AcceptedSocketIter, (void *)&AcceptedSocketSession, (void *)&TmpAcceptedSocket))
+    {
+        if(TmpAcceptedSocket->ReceivingLength>0){
+            g_debug("Testing RECV request on session %u with length %zu",TmpAcceptedSocket->Session,TmpAcceptedSocket->ReceivingLength);
+            if(TmpAcceptedSocket->ReceivingLength>BUF_LEN){
+                perror("Request length exceed buffer length");
+                exit(5);
+            }
+            while(TmpAcceptedSocket->RecvBufferSize<TmpAcceptedSocket->ReceivingLength){
+                g_debug("RecvBufferSize:%zu RecvBuffer:%s",TmpAcceptedSocket->RecvBufferSize,TmpAcceptedSocket->RecvBuffer);
+                if(TmpAcceptedSocket->Packages==NULL){
+                    break;
+                }
+                struct TrollMessageStruct *NowTrollMessage=(struct TrollMessageStruct *)(g_list_first(TmpAcceptedSocket->Packages)->data);
+                if(NowTrollMessage->SeqNum!=TmpAcceptedSocket->Base){
+                    break;
+                }
+                if(TmpAcceptedSocket->RecvBufferSize+NowTrollMessage->len<=TmpAcceptedSocket->ReceivingLength){
+                    bcopy(NowTrollMessage->body,TmpAcceptedSocket->RecvBuffer+TmpAcceptedSocket->RecvBufferSize,NowTrollMessage->len);
+                    // bcopy(TmpAcceptedSocket->RecvBuffer,NowTrollMessage->body,NowTrollMessage->len);
+                    // for(int i=0;i<NowTrollMessage->len;i++){
+                    //     TmpAcceptedSocket->RecvBuffer[TmpAcceptedSocket->RecvBufferSize+i]=NowTrollMessage->body[i];
+                    // }
+                    TmpAcceptedSocket->RecvBufferSize+=NowTrollMessage->len;
+                    TmpAcceptedSocket->Packages=g_list_remove_link(TmpAcceptedSocket->Packages,g_list_first(TmpAcceptedSocket->Packages));
+                    TmpAcceptedSocket->Base++;
+                    free(NowTrollMessage);
+                }else{
+                    size_t RemainSize=TmpAcceptedSocket->ReceivingLength-TmpAcceptedSocket->RecvBufferSize;
+                    bcopy(NowTrollMessage->body,TmpAcceptedSocket->RecvBuffer+TmpAcceptedSocket->RecvBufferSize,RemainSize);
+                    bcopy(NowTrollMessage->body+RemainSize,NowTrollMessage->body,NowTrollMessage->len-RemainSize);
+                    NowTrollMessage->len-=RemainSize;
+                }
+            }
+            g_debug("RecvBufferSize:%zu RecvBuffer:%s",TmpAcceptedSocket->RecvBufferSize,TmpAcceptedSocket->RecvBuffer);
+            if(TmpAcceptedSocket->RecvBufferSize==TmpAcceptedSocket->ReceivingLength){
+                g_debug("Sending data with size %zu to upper process",TmpAcceptedSocket->RecvBufferSize);
+                g_debug("data: %s",TmpAcceptedSocket->RecvBuffer);
+                if(sendto(TcpdMsgSocket, TmpAcceptedSocket->RecvBuffer, TmpAcceptedSocket->RecvBufferSize, 0, (struct sockaddr *)&(TmpAcceptedSocket->ReceivingAddr), sizeof(TmpAcceptedSocket->ReceivingAddr)) <0) {
+                    perror("error sending RECV return");
+                    exit(4);
+                }
+                TmpAcceptedSocket->RecvBufferSize=0;
+                TmpAcceptedSocket->ReceivingLength=0;
+            }
+        }
+
+    }
     return 0;
 }
 
@@ -399,15 +531,17 @@ ERRCODE SolveSendCallback(){
             struct TrollMessageStruct *NowTrollMessage=(struct TrollMessageStruct *)(g_list_first(TmpConnectedSocket->PendingPackages)->data);
             g_info("Sending package Addr:%s, Port:%u, SeqNum:%u (Session:%u)",inet_ntoa(NowTrollMessage->header.sin_addr),ntohs(NowTrollMessage->header.sin_port),NowTrollMessage->SeqNum,NowTrollMessage->Session);
             ssize_t SendRet=sendto(TmpConnectedSocket->SocketFD, (void *)NowTrollMessage, sizeof(*NowTrollMessage), MSG_WAITALL, (struct sockaddr *)&TrollAddr, sizeof(TrollAddr));
-            sentpackages++;
             if(SendRet < 0) {
                 perror("error sending buffer to troll");
                 exit(5);
             }
             TmpConnectedSocket->Packages= g_list_append(TmpConnectedSocket->Packages,NowTrollMessage);
             TmpConnectedSocket->PendingPackages=g_list_remove_link(TmpConnectedSocket->PendingPackages,g_list_first(TmpConnectedSocket->PendingPackages));
-            g_info("TODO: add resend timer");
-            sleep(1);
+            g_debug("Send timer request");
+            SendTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollMessage->Session,NowTrollMessage->SeqNum,10);
+            g_debug("Delay 100usec to avoid blocking local udp transmission...");
+            usleep(100);
+            // sleep(1);
         }
     }
     g_debug("Solve Send Callback done.");
@@ -447,6 +581,14 @@ ERRCODE PrintTcpdStatus(){
     while (g_hash_table_iter_next (&ConnectedSocketIter, (void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket))
     {
         g_info("###ConnectedSocket:%d Session:%u Base:%u Packages:%u Pending:%u",TmpConnectedSocket->SocketFD,TmpConnectedSocket->Session,TmpConnectedSocket->Base,g_list_length(TmpConnectedSocket->Packages),g_list_length(TmpConnectedSocket->PendingPackages));
+        // for(l=TmpConnectedSocket->Packages;l!=NULL;l=l->next){
+        //     struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
+        //     g_info("#### Package %u waiting for response",TmpTrollMessage->SeqNum);
+        // }
+        // for(l=TmpConnectedSocket->PendingPackages;l!=NULL;l=l->next){
+        //     struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
+        //     g_info("#### Package %u waiting pending for send",TmpTrollMessage->SeqNum);
+        // }
     }
     g_info("#Tcpd Status done.");
     g_info("##########");
@@ -485,7 +627,7 @@ ERRCODE tcpd_SOCKET(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     // bcopy(buf,(char *)&protocol,sizeof(int));
 
     g_info("SOCKET");
-    // g_info("SOCKET domain:%d, type:%d, protocol:%d\n",domain,type,protocol);
+    // g_info("SOCKET domain:%d, type:%d, protocol:%d",domain,type,protocol);
 
     /* initialize the socket that upper process calls */
     int ret_sock=socket(AF_INET, SOCK_DGRAM,0);
@@ -534,8 +676,8 @@ ERRCODE tcpd_BIND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     // }
     // bcopy(buf,(char *)&addrlen,sizeof(socklen_t));
 
-    g_info("BIND sockfd:%d, addr.port:%hu, addr.in_addr:%s\n",sockfd,ntohs(addr.sin_port),inet_ntoa(addr.sin_addr));
-    // g_info("SOCKET sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d\n",sockfd,addr.sin_port,addr.sin_addr,addrlen);
+    g_info("BIND sockfd:%d, addr.port:%hu, addr.in_addr:%s",sockfd,ntohs(addr.sin_port),inet_ntoa(addr.sin_addr));
+    // g_info("SOCKET sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d",sockfd,addr.sin_port,addr.sin_addr,addrlen);
 
     /* bind the socket with name provided */
     int ret_bind=bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
@@ -549,7 +691,7 @@ ERRCODE tcpd_BIND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     NowBindedSocket->Accepting=FALSE;
     g_array_append_val(BindedSockets,NowBindedSocket);
 
-    g_info("BIND return %d\n",ret_bind);
+    g_info("BIND return %d",ret_bind);
     
     /* send bind result back */
     if(sendto(sock, (char *)&ret_bind, sizeof(int), 0, (struct sockaddr *)&FrontAddr, sizeof(FrontAddr)) <0) {
@@ -639,16 +781,45 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     // }
     // bcopy(buf,(char *)&flags,sizeof(int));
 
-    g_info("RECV sockfd:%d, len:%zu\n",sockfd,len);
-    // g_info("RECV sockfd:%d, len:%zu, flags:%d\n",sockfd,len,flags);
+    g_info("RECV sockfd:%d, len:%zu",sockfd,len);
+    // g_info("RECV sockfd:%d, len:%zu, flags:%d",sockfd,len,flags);
 
     /* request too large */
-    if(BUF_LEN<len){
-        perror("error request length larger than buffer");
-        exit(5);
-    }
 
     g_warning("TODO: RECV");
+    ssize_t RecvRet=0;
+    if(len==0){
+        g_message("No data required for RECV request");
+        RecvRet=0;
+        if(sendto(sock, (char *)&RecvRet, sizeof(int), 0, (struct sockaddr *)&FrontAddr, sizeof(FrontAddr)) <0) {
+            perror("error sending RECV return");
+            exit(4);
+        }
+        return -1;
+    }
+    uint32_t Session=sockfd;
+    if(!g_hash_table_contains(AcceptedSockets,GUINT_TO_POINTER(Session))){
+        g_message("No accepted session with %u",Session);
+        RecvRet=-2;
+        if(sendto(sock, (char *)&RecvRet, sizeof(int), 0, (struct sockaddr *)&FrontAddr, sizeof(FrontAddr)) <0) {
+            perror("error sending RECV return");
+            exit(4);
+        }
+        return -1;
+    }
+    struct AcceptedSocketStruct *NowAcceptedSocket =g_hash_table_lookup(AcceptedSockets,GUINT_TO_POINTER(Session));
+    if(NowAcceptedSocket->ReceivingLength!=0){
+        g_message("Already waiting on session %u",Session);
+        RecvRet=-3;
+        if(sendto(sock, (char *)&RecvRet, sizeof(int), 0, (struct sockaddr *)&FrontAddr, sizeof(FrontAddr)) <0) {
+            perror("error sending RECV return");
+            exit(4);
+        }
+        return -1;
+    }
+
+    NowAcceptedSocket->ReceivingLength=len;
+    NowAcceptedSocket->ReceivingAddr=FrontAddr;
 //     unsigned char success=0;
 //     while(!success){
 // #ifdef __WITH_TROLL
@@ -663,12 +834,12 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
 //             exit(5);
 //         }   
 //         if(NowTrollMessage.len>sizeof(NowTrollMessage.body)){
-//             g_warning("[GARBLED] Length:%zu\n",NowTrollMessage.len);
+//             g_warning("[GARBLED] Length:%zu",NowTrollMessage.len);
 //             continue;
 //         }
 //         uint32_t CRC32=CHECKSUM_ALGORITHM(0,NowTrollMessage.body,NowTrollMessage.len);
 //         if(CRC32!=NowTrollMessage.CRC32){
-//             g_warning( "[GARBLED] CRC32: %u, Origin CRC32: %u\n", CRC32, NowTrollMessage.CRC32);
+//             g_warning( "[GARBLED] CRC32: %u, Origin CRC32: %u", CRC32, NowTrollMessage.CRC32);
 //             continue;
 //         }
 //         if(len>NowTrollMessage.len){
@@ -693,7 +864,7 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
 // #endif
 //     }
 
-    // g_info("RECV return %zd\n",len);
+    // g_info("RECV return %zd",len);
     
     // /* send package back to upper process */
     // if(sendto(sock, buf, len, 0, (struct sockaddr *)&FrontAddr, sizeof(FrontAddr)) <0) {
@@ -831,9 +1002,10 @@ ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     bcopy(buf,NowTrollMessage->body,len);
     NowTrollMessage->len=len;
     NowTrollMessage->CheckSum=CHECKSUM_ALGORITHM(0,((char *)(NowTrollMessage))+CheckSumOffset,sizeof(*NowTrollMessage)-CheckSumOffset);
-    g_info("Checksum is %u\n", NowTrollMessage->CheckSum);
+    g_info("Checksum is %u", NowTrollMessage->CheckSum);
     g_debug("Appending troll package after now connected socket packages");
     NowConnectedSocket->PendingPackages=g_list_append(NowConnectedSocket->PendingPackages,NowTrollMessage);
+    InBufferPackages++;
 
 
     // ssize_t ret_send=sendto(sockfd, (void *)NowTrollMessage, sizeof(*NowTrollMessage), MSG_WAITALL, (struct sockaddr *)&TrollAddr, sizeof(TrollAddr));
@@ -851,7 +1023,7 @@ ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     // }
 #endif
 
-    // g_info("SEND return %zd\n",ret_send);
+    // g_info("SEND return %zd",ret_send);
     
     g_debug("Sending send result alwalys success...");
     ssize_t SendRet=len;

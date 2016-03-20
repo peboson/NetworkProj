@@ -105,7 +105,11 @@ int main(int argc, char *argv[])
         /* read BUF_LEN bytes from socket every time */
         file_left=file_size;
         while(file_left){
-            r_val=RECV(sock_client, buf_in, BUF_LEN, 0);
+            if(file_left<BUF_LEN){
+                r_val=RECV(sock_client, buf_in, file_left, 0);
+            }else{
+                r_val=RECV(sock_client, buf_in, BUF_LEN, 0);
+            }
             if(r_val<0){
                 perror("error reading on stream socket");
                 break;
@@ -122,6 +126,7 @@ int main(int argc, char *argv[])
             }
             /* update left bytes */
             file_left=file_left-r_val;
+            g_debug("File receives %u",file_size-file_left);
         }
         g_info("Server receives: %u bytes\n", file_size);
 

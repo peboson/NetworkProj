@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
             r_val=file_left;
         }
         /* send buffer to server */
-        w_val=SEND(sock, buf, BUF_LEN,0);
+        w_val=SEND(sock, buf, r_val,0);
         if(w_val < 0) {
             perror("error writing on stream socket");
             exit(1);

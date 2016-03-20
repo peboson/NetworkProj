@@ -4,5 +4,5 @@ static void _dummy(const gchar *log_domain, GLogLevelFlags log_level, const gcha
 }
 void GlobalInitialize(){
     srand((unsigned)time(NULL));
-    g_log_set_handler (NULL, G_LOG_LEVEL_DEBUG,_dummy, NULL);
+    //g_log_set_handler (NULL, G_LOG_LEVEL_DEBUG,_dummy, NULL);
 }

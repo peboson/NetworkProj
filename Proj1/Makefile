@@ -25,7 +25,7 @@ ftps: ftps.o Global.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 ftpc: ftpc.o Global.o tcpudp.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
-tcpd: tcpd.o Global.o tcpudp.o crc32.o checksum.o
+tcpd: tcpd.o Global.o tcpudp.o crc32.o checksum.o TimerRequest.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
 timer: timer.o Global.o TimerRequest.o
 	$(CC) $(CC_OPTIONS) -o $@ $^ $(LIBS)
