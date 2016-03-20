@@ -1,3 +1,65 @@
+#How To Run
+
+Start 7 console in Ubuntu
+For each console run
+
+    $source set_glib_env.sh
+
+Then start the program by following order
+
+@server console 1:
+
+    $cd Troll/
+    $./troll 8081
+
+@server console 2:
+
+    $cd server/
+    $./tcpd server
+
+@server console 3:
+
+    $cd server/
+    $./ftps 8000
+
+@client console 1:
+
+    $cd Troll/
+    $./troll 8081
+
+@client console 2:
+
+    $cd client/
+    $./tcpd client
+
+@client console 3:
+
+    $cd client/
+    $./timer
+
+@client console 4:
+
+    $cd client/
+    $./ftpc serverhost 8000 1.jpg
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # CSE 5462 Network Programming
 
 # NAME
