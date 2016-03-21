@@ -30,6 +30,7 @@ int main()
     GlobalInitialize();
     g_message("Run Timer Process");
     g_debug("Fetching last system time ...");
+    fprintf(stdout,"test");
     gettimeofday(&LastSystemTime,NULL);
     g_debug("Constructing timer socket ...");
     TimerSocket=socket(AF_INET, SOCK_DGRAM, 0);

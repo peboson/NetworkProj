@@ -574,7 +574,7 @@ ERRCODE SolveSendCallback(){
             g_info("\n\n\nRTO %6f seconds",EstimatedRTT);
 
 
-            SendTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollMessage->Session,NowTrollMessage->SeqNum,EstimatedRTT);
+            SendTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollMessage->Session,NowTrollMessage->SeqNum,EsstimatedRTT);
             g_debug("Delay 1000usec to avoid blocking local udp transmission...");
             usleep(1000);
             // sleep(1);
