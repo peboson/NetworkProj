@@ -250,8 +250,8 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
     g_assert(NowBindedSocket);
     g_debug("Receiving data sent to socket %d ...",NowBindedSocket->SocketFD);
     struct TrollMessageStruct *NowTrollMessage=(struct TrollMessageStruct *)malloc(sizeof(struct TrollMessageStruct));
-#ifdef __WITH_TROLL
     struct sockaddr_in RemoteTrollAddr;
+#ifdef __WITH_TROLL
     socklen_t RemoteTrollAddrLength=sizeof(RemoteTrollAddr);
     g_debug("Receiving data from troll ...");
     ssize_t RecvRet=recvfrom(NowBindedSocket->SocketFD, (void *)NowTrollMessage, sizeof(*NowTrollMessage), MSG_WAITALL, (struct sockaddr *)&RemoteTrollAddr, &RemoteTrollAddrLength);
@@ -326,6 +326,7 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
     struct TrollAckStruct *NowTrollAck=(struct TrollAckStruct *)malloc(sizeof(struct TrollAckStruct));
     NowTrollAck->header=NowTrollMessage->header;
     NowTrollAck->header.sin_family=htons(AF_INET);
+    NowTrollAck->header.sin_addr=RemoteTrollAddr.sin_addr;
     NowTrollAck->Session=NowTrollMessage->Session;
     NowTrollAck->SeqNum=NowTrollMessage->SeqNum;
     NowTrollAck->CheckSum=CHECKSUM_ALGORITHM(0,((char *)(NowTrollAck))+CheckSumOffset,sizeof(*NowTrollAck)-CheckSumOffset);
@@ -552,7 +553,7 @@ ERRCODE SolveSendCallback(){
             g_debug("Send timer request");
             SendTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollMessage->Session,NowTrollMessage->SeqNum,10);
             g_debug("Delay 1000usec to avoid blocking local udp transmission...");
-            usleep(1000);
+            usleep(10000);
             // sleep(1);
             l=lnext;
         }
