@@ -111,7 +111,7 @@ timer will listen on a local port, and receive start and cancel timer commands f
 driver will send test commands to timer on a local port.
 
 Also not that stdlinux does not have the updated glib library needed to run this code so it must be run on ubuntu.
-glib is useful for hashtables and error control.
+glib is useful for hashtables and error control. Output can be toggled using: "$source set_glib_env.sh".
 
 
 # FILES

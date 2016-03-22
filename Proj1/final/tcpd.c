@@ -506,14 +506,17 @@ ERRCODE SolveAcceptCallback(){
     return 0;
 }
 
+//deal with pending receive request from ftps
 ERRCODE SolveRecvCallback(){
     g_debug("Sending Recv Callbacks ...");
     GHashTableIter AcceptedSocketIter;
     int AcceptedSocketSession;
     struct AcceptedSocketStruct *TmpAcceptedSocket;
     g_hash_table_iter_init (&AcceptedSocketIter, AcceptedSockets);
+    //iterate through sockets
     while (g_hash_table_iter_next (&AcceptedSocketIter, (void *)&AcceptedSocketSession, (void *)&TmpAcceptedSocket))
     {
+	//if theres a rcv request then send data to socket
         if(TmpAcceptedSocket->ReceivingLength>0){
             g_debug("Testing RECV request on session %u with length %zu",TmpAcceptedSocket->Session,TmpAcceptedSocket->ReceivingLength);
             if(TmpAcceptedSocket->ReceivingLength>BUF_LEN){
@@ -529,6 +532,7 @@ ERRCODE SolveRecvCallback(){
                 if(NowTrollMessage->SeqNum!=TmpAcceptedSocket->Base){
                     break;
                 }
+		//get message for socket
                 if(TmpAcceptedSocket->RecvBufferSize+NowTrollMessage->len<=TmpAcceptedSocket->ReceivingLength){
                     bcopy(NowTrollMessage->body,TmpAcceptedSocket->RecvBuffer+TmpAcceptedSocket->RecvBufferSize,NowTrollMessage->len);
                     TmpAcceptedSocket->RecvBufferSize+=NowTrollMessage->len;
@@ -542,6 +546,7 @@ ERRCODE SolveRecvCallback(){
                     NowTrollMessage->len-=RemainSize;
                 }
             }
+	    //if requested size = buffer size then send the buffer to the request socket
             g_debug("RecvBufferSize:%zu RecvBuffer:%s",TmpAcceptedSocket->RecvBufferSize,TmpAcceptedSocket->RecvBuffer);
             if(TmpAcceptedSocket->RecvBufferSize==TmpAcceptedSocket->ReceivingLength){
                 g_debug("Sending data with size %zu to upper process",TmpAcceptedSocket->RecvBufferSize);
@@ -559,22 +564,26 @@ ERRCODE SolveRecvCallback(){
     return 0;
 }
 
+//send packages to troll and add timers
 ERRCODE SolveSendCallback(){
     g_debug("Sending all pending data packages to server");
     GHashTableIter ConnectedSocketIter;
     int ConnectedSocketSocketFD;
     struct ConnectedSocketStruct *TmpConnectedSocket;
     g_hash_table_iter_init (&ConnectedSocketIter, ConnectedSockets);
+    //iterate through connected sockets
     while (g_hash_table_iter_next (&ConnectedSocketIter,(void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket)!=FALSE)
     {
         g_debug("Updating MinSeq of ConnectedSocket");
         TmpConnectedSocket->MinSeq=100000000;
         GList *l;
+	//get seq numbers
         for(l=TmpConnectedSocket->Packages;l!=NULL;l=l->next){
             struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
             TmpConnectedSocket->MinSeq=TmpTrollMessage->SeqNum<TmpConnectedSocket->MinSeq?TmpTrollMessage->SeqNum:TmpConnectedSocket->MinSeq;
         }
         l=TmpConnectedSocket->PendingPackages;
+	//iterate through all packages
         while(l!=NULL){
             g_debug("Sending one pending package ...");
             GList *lnext=l->next;
@@ -584,6 +593,7 @@ ERRCODE SolveSendCallback(){
                 continue;
             }
             g_info("Sending package Addr:%s, Port:%u, SeqNum:%u (Session:%u)",inet_ntoa(NowTrollMessage->header.sin_addr),ntohs(NowTrollMessage->header.sin_port),NowTrollMessage->SeqNum,NowTrollMessage->Session);
+	    //send buffer to troll
             ssize_t SendRet=sendto(TmpConnectedSocket->SocketFD, (void *)NowTrollMessage, sizeof(*NowTrollMessage), MSG_WAITALL, (struct sockaddr *)&TrollAddr, sizeof(TrollAddr));
             if(SendRet < 0) {
                 perror("error sending buffer to troll");
@@ -593,8 +603,8 @@ ERRCODE SolveSendCallback(){
             TmpConnectedSocket->PendingPackages=g_list_remove_link(TmpConnectedSocket->PendingPackages,l);
             g_debug("Send timer request");
 
+	    //calculate RTT, DEV and RTO to set timer with jacobson's algorithm
     	    gettimeofday(&SendTime,NULL);
-	    //set initial RTT to 10 ms
 	    if(ElapsedSeconds<=0)
 		ElapsedSeconds=.01;
  	    EstimatedRTT=.875*EstimatedRTTprev+(1-.875)*ElapsedSeconds;
@@ -605,7 +615,7 @@ ERRCODE SolveSendCallback(){
 	    EstimatedDEVprev=EstimatedDEV;
 	    EstimatedRTTprev=EstimatedRTT;
 
-
+	    //send timer request with calculated RTO
             SendTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollMessage->Session,NowTrollMessage->SeqNum,EstimatedRTO);
             g_debug("Delay 1000usec to avoid blocking local udp transmission...");
             usleep(1000);
@@ -618,6 +628,7 @@ ERRCODE SolveSendCallback(){
     return 0;
 }
 
+//print entire tcpd status
 ERRCODE PrintTcpdStatus(){
     g_debug("Printing Tcpd Status...");
     g_info("##########");
@@ -651,14 +662,6 @@ ERRCODE PrintTcpdStatus(){
     while (g_hash_table_iter_next (&ConnectedSocketIter, (void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket))
     {
         g_info("###ConnectedSocket:%d Session:%u Base:%u Packages:%u Pending:%u",TmpConnectedSocket->SocketFD,TmpConnectedSocket->Session,TmpConnectedSocket->Base,g_list_length(TmpConnectedSocket->Packages),g_list_length(TmpConnectedSocket->PendingPackages));
-        // for(l=TmpConnectedSocket->Packages;l!=NULL;l=l->next){
-        //     struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
-        //     g_info("#### Package %u waiting for response",TmpTrollMessage->SeqNum);
-        // }
-        // for(l=TmpConnectedSocket->PendingPackages;l!=NULL;l=l->next){
-        //     struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
-        //     g_info("#### Package %u waiting pending for send",TmpTrollMessage->SeqNum);
-        // }
     }
     g_info("#Tcpd Status done.");
     g_info("##########");
@@ -666,6 +669,7 @@ ERRCODE PrintTcpdStatus(){
     return 0;
 }
 
+//Socket function
 ERRCODE tcpd_SOCKET(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_info("SOCKET");
 
@@ -686,11 +690,11 @@ ERRCODE tcpd_SOCKET(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
+//Bind function
 ERRCODE tcpd_BIND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     /* fetch the oringin arguments of BIND calls */
     int sockfd;
     struct sockaddr_in addr;
-    // socklen_t addrlen;
 
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
@@ -708,16 +712,7 @@ ERRCODE tcpd_BIND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     }
     bcopy(buf,(char *)&addr,sizeof(struct sockaddr_in));
 
-    // bzero(buf, sizeof(socklen_t));
-    // FrontAddrLength= sizeof(FrontAddr);
-    // if(recvfrom(sock, buf, sizeof(socklen_t),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
-    //     perror("error receiving BIND addrlen"); 
-    //     exit(4);
-    // }
-    // bcopy(buf,(char *)&addrlen,sizeof(socklen_t));
-
     g_info("BIND sockfd:%d, addr.port:%hu, addr.in_addr:%s",sockfd,ntohs(addr.sin_port),inet_ntoa(addr.sin_addr));
-    // g_info("SOCKET sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d",sockfd,addr.sin_port,addr.sin_addr,addrlen);
 
     /* bind the socket with name provided */
     int ret_bind=bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
@@ -741,10 +736,11 @@ ERRCODE tcpd_BIND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
+//Accept function
 ERRCODE tcpd_ACCEPT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Received ACCEPT message ...");
     int AcceptSocketFD;
-
+    //get accept socket
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(int),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -758,6 +754,7 @@ ERRCODE tcpd_ACCEPT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Adding ACCEPT request to binded socket list ...");
     ERRCODE AcceptResult=-1;
     uint i;
+    //accept binded sockets
     for(i=0;i<BindedSockets->len;i++){
         struct BindedSocketStruct *TmpBindedSocket=g_array_index(BindedSockets,struct BindedSocketStruct *,i);
         if(TmpBindedSocket->SocketFD!=AcceptSocketFD){
@@ -775,6 +772,7 @@ ERRCODE tcpd_ACCEPT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     if(AcceptResult==-1){
         g_message("No binded socket found");
     }
+    //send accept result back
     if(AcceptResult!=0){
         g_debug("Sending back error ACCEPT");
         int AcceptRet=-1;
@@ -789,14 +787,14 @@ ERRCODE tcpd_ACCEPT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
+//Receive function
 ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Received RECV message ...");
     /* fetch the oringin arguments of RECV calls */
     int sockfd;
-    // void *buf;
     size_t len;
-    // int flags;
 
+    //get recv sockfd
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(int),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -814,7 +812,6 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     bcopy(buf,(char *)&len,sizeof(size_t));
 
     g_info("RECV sockfd:%d, len:%zu",sockfd,len);
-    // g_info("RECV sockfd:%d, len:%zu, flags:%d",sockfd,len,flags);
 
     /* request too large */
 
@@ -857,13 +854,14 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
+//connect function
 ERRCODE tcpd_CONNECT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Received CONNECT message ...");
     g_debug("Fetching origin arguments of CONNECT ...");
     int sockfd;
     struct sockaddr_in addr;
-    // socklen_t addrlen;
 
+    //receive connect sockft
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(int),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -905,15 +903,13 @@ ERRCODE tcpd_CONNECT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
-
+//send function
 ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Received SEND message");
     g_debug("Fetching origin arguments of SEND ...");
     int sockfd;
-    // void *buf;
     size_t len;
-    // int flags;
-
+    //receive send sockfd
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(int),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -921,7 +917,7 @@ ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
         exit(4);
     }
     bcopy(buf,(char *)&sockfd,sizeof(int));
-
+    //get send len
     bzero(buf, sizeof(size_t));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(size_t),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -929,7 +925,7 @@ ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
         exit(4);
     }
     bcopy(buf,(char *)&len,sizeof(size_t));
-
+    //fetch data
     g_debug("Fetching send data ...");
     if(BUF_LEN<len){
         perror("error request length larger than buffer");
