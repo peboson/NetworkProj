@@ -48,6 +48,7 @@ struct AcceptedSocketStruct{
     char RecvBuffer[BUF_LEN];
     size_t RecvBufferSize;
 };
+//list of accepted sockets
 GHashTable *AcceptedSockets;
 GList *WaitingAcceptSocketsList;
 
@@ -78,12 +79,18 @@ ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength);
 
 int InBufferPackages=0;
 
+//jockobson's algorithm info
 struct timeval SendTime={.tv_sec=0, .tv_usec=0}, AckTime={.tv_sec=0, .tv_usec=0}; /*for RTT/RTO calculation*/
 double ElapsedSeconds=0.0;
 double EstimatedRTT=0.0;
+double EstimatedRTTprev=0.01;
+double EstimatedDEV=0.0;
+double EstimatedDEVprev=0.01;
+double EstimatedRTO=0.0;
 
 int main(int argc, char *argv[]) /* server program called with no argument */
 {
+    //initialize variables
     GlobalInitialize();
     BindedSockets=g_array_new(FALSE,FALSE,sizeof(struct BindedSocketStruct *));
     AcceptedSockets=g_hash_table_new(NULL,NULL);
@@ -139,7 +146,7 @@ int main(int argc, char *argv[]) /* server program called with no argument */
     bcopy((void *)LocalHostEnt->h_addr, (void *)&TrollAddr.sin_addr, LocalHostEnt->h_length);
     TrollAddr.sin_port = htons(atoi(TROLL_PORT));
 #endif
-
+    
     g_info("Server waiting on port # %d", ntohs(tcpd_name.sin_port));
 
     g_debug("Setting up timer ...");
@@ -164,6 +171,7 @@ int main(int argc, char *argv[]) /* server program called with no argument */
         FD_ZERO(&WaitingSocketSet);
         FD_SET(TimerDriverSocket,&WaitingSocketSet);
         int MaxSocket=TimerDriverSocket;
+	//connect to sockets
         if(InBufferPackages<MAX_BUFFER_PACKAGES){
             FD_SET(TcpdMsgSocket,&WaitingSocketSet);
             MaxSocket=TcpdMsgSocket>MaxSocket?TcpdMsgSocket:MaxSocket;
@@ -188,6 +196,7 @@ int main(int argc, char *argv[]) /* server program called with no argument */
         SleepTime.tv_sec=1000;
         SleepTime.tv_usec=0;
         g_debug("Select sockets ...");
+	//read from sockets
         int ready=select(MaxSocket+1,&WaitingSocketSet,NULL,NULL,&SleepTime);
         if(ready>0){
             g_debug("Testing active socket ...");
@@ -219,6 +228,7 @@ int main(int argc, char *argv[]) /* server program called with no argument */
                 }
             }
             uint i;
+	    //get data from sockets
             for(i=0;i<BindedSockets->len;i++){
                 struct BindedSocketStruct *TmpBindedSocket=g_array_index(BindedSockets,struct BindedSocketStruct *,i);
                 if(FD_ISSET(TmpBindedSocket->SocketFD,&WaitingSocketSet)){
@@ -229,12 +239,14 @@ int main(int argc, char *argv[]) /* server program called with no argument */
             int ConnectedSocketSocketFD;
             struct ConnectedSocketStruct *TmpConnectedSocket;
             g_hash_table_iter_init (&ConnectedSocketIter, ConnectedSockets);
+	    //look for ack
             while (g_hash_table_iter_next (&ConnectedSocketIter,(void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket)) {
                 if(FD_ISSET(TmpConnectedSocket->SocketFD,&WaitingSocketSet)){
                     g_info("Received Ack");
                     RecvAck(TmpConnectedSocket);
                 }
             }
+       	    //look for expired timers
             if(FD_ISSET(TimerDriverSocket,&WaitingSocketSet)){
                 g_debug("Receiving timer expired request");
                 RecvTimer();
@@ -250,11 +262,14 @@ int main(int argc, char *argv[]) /* server program called with no argument */
     close(sock);
     exit(0);
 }
+
+//receive data from troll or from client
 ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
     g_assert(NowBindedSocket);
     g_debug("Receiving data sent to socket %d ...",NowBindedSocket->SocketFD);
     struct TrollMessageStruct *NowTrollMessage=(struct TrollMessageStruct *)malloc(sizeof(struct TrollMessageStruct));
     struct sockaddr_in RemoteTrollAddr;
+    //receive from the troll or client
 #ifdef __WITH_TROLL
     socklen_t RemoteTrollAddrLength=sizeof(RemoteTrollAddr);
     g_debug("Receiving data from troll ...");
@@ -270,17 +285,15 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
         perror("error receiving Data");
         exit(5);
     }   
-    // g_debug("Checking package length is garbled or not ...");
-    // if(NowTrollMessage->len>sizeof(NowTrollMessage->body)){
-    //     g_info("[GARBLED] Length:%zu",NowTrollMessage->len);
-    //     return -1;
-    // }
+
+    //check the checksum
     g_debug("Checking package body is garbled or not ...");
     uint32_t CheckSum=CHECKSUM_ALGORITHM(0,((char *)(NowTrollMessage))+CheckSumOffset,sizeof(*NowTrollMessage)-CheckSumOffset);
     if(CheckSum!=NowTrollMessage->CheckSum){
         g_info("[GARBLED] CheckSum: %u, Origin CheckSum: %u", CheckSum, NowTrollMessage->CheckSum);
         return -2;
     }
+    //verify socket info
     g_debug("Finding Accepted socket with session %u",NowTrollMessage->Session);
     struct AcceptedSocketStruct *NowAcceptedSocket=g_hash_table_lookup(AcceptedSockets,GUINT_TO_POINTER(NowTrollMessage->Session));
     if(NowAcceptedSocket==NULL){
@@ -304,6 +317,7 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
         WaitingAcceptSocketsList=g_list_append(WaitingAcceptSocketsList,NowAcceptedSocket);
     }
 
+    //place package in buffer
     g_debug("Inserting received package into packages buffer ...");
     int RequireValid=TRUE;
     if(NowAcceptedSocket->Base>NowTrollMessage->SeqNum){
@@ -311,6 +325,7 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
         RequireValid=FALSE;
     }
     GList *l;
+    //find if package is already in list
     for(l=NowAcceptedSocket->Packages;l!=NULL;l=l->next){
         struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
         if(TmpTrollMessage->SeqNum==NowTrollMessage->SeqNum){
@@ -322,9 +337,11 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
             break;
         }
     }
+    //insert in list
     if(RequireValid){
         NowAcceptedSocket->Packages=g_list_insert_before(NowAcceptedSocket->Packages,l,NowTrollMessage);
     }
+    //make ACK package to return
     g_debug("Inserted received package");
     g_debug("Constructing Ack package ...");
     struct TrollAckStruct *NowTrollAck=(struct TrollAckStruct *)malloc(sizeof(struct TrollAckStruct));
@@ -336,6 +353,7 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
     NowTrollAck->CheckSum=CHECKSUM_ALGORITHM(0,((char *)(NowTrollAck))+CheckSumOffset,sizeof(*NowTrollAck)-CheckSumOffset);
     g_info("Sending Ack Addr:%s, Port:%u, SeqNum:%u (Session:%u)",inet_ntoa(NowTrollAck->header.sin_addr),ntohs(NowTrollAck->header.sin_port),NowTrollAck->SeqNum,NowTrollAck->Session);
     g_debug("Sending ACK back ...");
+    //send ACK
     ssize_t AckRet=sendto(NowBindedSocket->SocketFD, (void *)NowTrollAck, sizeof(*NowTrollAck), MSG_WAITALL, (struct sockaddr *)&TrollAddr, sizeof(TrollAddr));
     if(AckRet < 0) {
         perror("error sending Ack to troll");
@@ -345,10 +363,12 @@ ERRCODE RecvData(struct BindedSocketStruct *NowBindedSocket){
     return 0;
 }
 
+//receive ACK response from TROLL
 ERRCODE RecvAck(struct ConnectedSocketStruct *NowConnectedSocket){
     g_assert(NowConnectedSocket);
     g_debug("Receiving Ack sent to socket %d ...",NowConnectedSocket->SocketFD);
     struct TrollAckStruct *NowTrollAck=(struct TrollAckStruct *)malloc(sizeof(struct TrollAckStruct ));
+    //receieve ACK from TROLL
 #ifdef __WITH_TROLL
     struct sockaddr_in RemoteTrollAddr;
     socklen_t RemoteTrollAddrLength=sizeof(RemoteTrollAddr);
@@ -365,6 +385,7 @@ ERRCODE RecvAck(struct ConnectedSocketStruct *NowConnectedSocket){
     //get RTT
     gettimeofday(&AckTime,NULL);
     g_debug("Calculating elapsed time ...\n\n\n");
+    //elapsed time between send and ack response
     ElapsedSeconds=(double)(SendTime.tv_sec-AckTime.tv_sec) +USEC2SEC*SendTime.tv_usec-USEC2SEC*AckTime.tv_usec;
     if(ElapsedSeconds<0.0) 
 	ElapsedSeconds*=-1.0;
@@ -375,6 +396,7 @@ ERRCODE RecvAck(struct ConnectedSocketStruct *NowConnectedSocket){
         perror("error receiving Ack");
         exit(5);
     }   
+    //check the checksum
     g_debug("Checking package body is garbled or not ...");
     uint32_t CheckSum=CHECKSUM_ALGORITHM(0,((char *)(NowTrollAck))+CheckSumOffset,sizeof(*NowTrollAck)-CheckSumOffset);
     g_info("Received Ack SeqNum:%u (Session:%u)",NowTrollAck->SeqNum,NowTrollAck->Session);
@@ -384,6 +406,7 @@ ERRCODE RecvAck(struct ConnectedSocketStruct *NowConnectedSocket){
     }
     g_debug("Removing Ack package with SeqNum %u (Session %u) ...",NowTrollAck->SeqNum,NowTrollAck->Session);
     GList *l;
+    //remove all ACKed packages from window
     for(l=NowConnectedSocket->Packages;l!=NULL;l=l->next){
         struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
         if(TmpTrollMessage->Session==NowTrollAck->Session&&TmpTrollMessage->SeqNum==NowTrollAck->SeqNum){
@@ -394,12 +417,14 @@ ERRCODE RecvAck(struct ConnectedSocketStruct *NowConnectedSocket){
             break;
         }
     }
+    //cancel all removed packages timer requests
     g_debug("Sending cancel timer request with SeqNum %u (Session %u) ...",NowTrollAck->SeqNum,NowTrollAck->Session);
     CancelTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollAck->Session,NowTrollAck->SeqNum);
     free(NowTrollAck);
     return 0;
 }
 
+//timer expiration notice
 ERRCODE RecvTimer(){
     g_debug("Receiving Timer Expired request ...");
     struct TimerExpiredStruct *NowExpired=(struct TimerExpiredStruct *)malloc(sizeof(struct TimerExpiredStruct ));
@@ -409,7 +434,8 @@ ERRCODE RecvTimer(){
     if(RecvRet< 0) {
         perror("error receiving Timer Expired");
         exit(5);
-    }   
+    }
+    //get socket info for timer   
     g_debug("Finding connected socket for timer expired ...");
     struct ConnectedSocketStruct * NowConnectedSocket=NULL;
     GHashTableIter ConnectedSocketIter;
@@ -427,6 +453,7 @@ ERRCODE RecvTimer(){
         perror("socket not found");
         exit(5);
     }
+    //add package to list to be resent to socket
     g_debug("Moving expired package to pending sequence ...");
     GList *l;
     for(l=NowConnectedSocket->Packages;l!=NULL;l=l->next){
@@ -442,6 +469,7 @@ ERRCODE RecvTimer(){
     return 0;
 }
 
+//search and accept binded sockets and move sockets from waiting struct to accepted struct
 ERRCODE SolveAcceptCallback(){
     g_debug("Sending available accept callback to front process");
     if(WaitingAcceptSocketsList==NULL){
@@ -449,6 +477,7 @@ ERRCODE SolveAcceptCallback(){
     }
     g_debug("Searching accept request in binded sockets ...");
     uint i;
+    //search through all binded sockets to accept
     for(i=0;i<BindedSockets->len;i++){
         struct BindedSocketStruct *TmpBindedSocket=g_array_index(BindedSockets,struct BindedSocketStruct *,i);
         if(TmpBindedSocket->Accepting){
@@ -457,11 +486,13 @@ ERRCODE SolveAcceptCallback(){
             for(l=WaitingAcceptSocketsList;l!=NULL;l=l->next){
                 struct AcceptedSocketStruct *TmpAcceptedSocket=(struct AcceptedSocketStruct *)(l->data);
                 if(TmpAcceptedSocket->SocketFD==TmpBindedSocket->SocketFD){
+		    //send accept callback
                     g_debug("Sending accept callback ...");
                     if(sendto(TcpdMsgSocket, (char *)&(TmpAcceptedSocket->Session), sizeof(int), 0, (struct sockaddr *)&(TmpBindedSocket->AcceptingAddr), sizeof(TmpBindedSocket->AcceptingAddr)) <0) {
                         perror("error sending ACCEPT return");
                         exit(4);
                     }
+		    //move sockets that are accepted to accepted list
                     g_debug("Moving accepted socket struct from waiting list to accepted list ...");
                     g_hash_table_insert(AcceptedSockets,GUINT_TO_POINTER(TmpAcceptedSocket->Session),TmpAcceptedSocket);
                     WaitingAcceptSocketsList=g_list_remove_link(WaitingAcceptSocketsList,l);
@@ -475,14 +506,17 @@ ERRCODE SolveAcceptCallback(){
     return 0;
 }
 
+//deal with pending receive request from ftps
 ERRCODE SolveRecvCallback(){
     g_debug("Sending Recv Callbacks ...");
     GHashTableIter AcceptedSocketIter;
     int AcceptedSocketSession;
     struct AcceptedSocketStruct *TmpAcceptedSocket;
     g_hash_table_iter_init (&AcceptedSocketIter, AcceptedSockets);
+    //iterate through sockets
     while (g_hash_table_iter_next (&AcceptedSocketIter, (void *)&AcceptedSocketSession, (void *)&TmpAcceptedSocket))
     {
+	//if theres a rcv request then send data to socket
         if(TmpAcceptedSocket->ReceivingLength>0){
             g_debug("Testing RECV request on session %u with length %zu",TmpAcceptedSocket->Session,TmpAcceptedSocket->ReceivingLength);
             if(TmpAcceptedSocket->ReceivingLength>BUF_LEN){
@@ -498,12 +532,9 @@ ERRCODE SolveRecvCallback(){
                 if(NowTrollMessage->SeqNum!=TmpAcceptedSocket->Base){
                     break;
                 }
+		//get message for socket
                 if(TmpAcceptedSocket->RecvBufferSize+NowTrollMessage->len<=TmpAcceptedSocket->ReceivingLength){
                     bcopy(NowTrollMessage->body,TmpAcceptedSocket->RecvBuffer+TmpAcceptedSocket->RecvBufferSize,NowTrollMessage->len);
-                    // bcopy(TmpAcceptedSocket->RecvBuffer,NowTrollMessage->body,NowTrollMessage->len);
-                    // for(int i=0;i<NowTrollMessage->len;i++){
-                    //     TmpAcceptedSocket->RecvBuffer[TmpAcceptedSocket->RecvBufferSize+i]=NowTrollMessage->body[i];
-                    // }
                     TmpAcceptedSocket->RecvBufferSize+=NowTrollMessage->len;
                     TmpAcceptedSocket->Packages=g_list_remove_link(TmpAcceptedSocket->Packages,g_list_first(TmpAcceptedSocket->Packages));
                     TmpAcceptedSocket->Base++;
@@ -515,6 +546,7 @@ ERRCODE SolveRecvCallback(){
                     NowTrollMessage->len-=RemainSize;
                 }
             }
+	    //if requested size = buffer size then send the buffer to the request socket
             g_debug("RecvBufferSize:%zu RecvBuffer:%s",TmpAcceptedSocket->RecvBufferSize,TmpAcceptedSocket->RecvBuffer);
             if(TmpAcceptedSocket->RecvBufferSize==TmpAcceptedSocket->ReceivingLength){
                 g_debug("Sending data with size %zu to upper process",TmpAcceptedSocket->RecvBufferSize);
@@ -532,22 +564,26 @@ ERRCODE SolveRecvCallback(){
     return 0;
 }
 
+//send packages to troll and add timers
 ERRCODE SolveSendCallback(){
     g_debug("Sending all pending data packages to server");
     GHashTableIter ConnectedSocketIter;
     int ConnectedSocketSocketFD;
     struct ConnectedSocketStruct *TmpConnectedSocket;
     g_hash_table_iter_init (&ConnectedSocketIter, ConnectedSockets);
+    //iterate through connected sockets
     while (g_hash_table_iter_next (&ConnectedSocketIter,(void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket)!=FALSE)
     {
         g_debug("Updating MinSeq of ConnectedSocket");
         TmpConnectedSocket->MinSeq=100000000;
         GList *l;
+	//get seq numbers
         for(l=TmpConnectedSocket->Packages;l!=NULL;l=l->next){
             struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
             TmpConnectedSocket->MinSeq=TmpTrollMessage->SeqNum<TmpConnectedSocket->MinSeq?TmpTrollMessage->SeqNum:TmpConnectedSocket->MinSeq;
         }
         l=TmpConnectedSocket->PendingPackages;
+	//iterate through all packages
         while(l!=NULL){
             g_debug("Sending one pending package ...");
             GList *lnext=l->next;
@@ -557,6 +593,7 @@ ERRCODE SolveSendCallback(){
                 continue;
             }
             g_info("Sending package Addr:%s, Port:%u, SeqNum:%u (Session:%u)",inet_ntoa(NowTrollMessage->header.sin_addr),ntohs(NowTrollMessage->header.sin_port),NowTrollMessage->SeqNum,NowTrollMessage->Session);
+	    //send buffer to troll
             ssize_t SendRet=sendto(TmpConnectedSocket->SocketFD, (void *)NowTrollMessage, sizeof(*NowTrollMessage), MSG_WAITALL, (struct sockaddr *)&TrollAddr, sizeof(TrollAddr));
             if(SendRet < 0) {
                 perror("error sending buffer to troll");
@@ -566,15 +603,20 @@ ERRCODE SolveSendCallback(){
             TmpConnectedSocket->PendingPackages=g_list_remove_link(TmpConnectedSocket->PendingPackages,l);
             g_debug("Send timer request");
 
+	    //calculate RTT, DEV and RTO to set timer with jacobson's algorithm
     	    gettimeofday(&SendTime,NULL);
-	    //set initial RTT to 10 ms
 	    if(ElapsedSeconds<=0)
 		ElapsedSeconds=.01;
- 	    EstimatedRTT=.875*EstimatedRTT+(1-.875)*ElapsedSeconds;
-            g_info("\n\n\nRTO %6f seconds",EstimatedRTT);
+ 	    EstimatedRTT=.875*EstimatedRTTprev+(1-.875)*ElapsedSeconds;
+	    EstimatedDEV=(1-.25)*EstimatedDEVprev+.25*abs(ElapsedSeconds-EstimatedRTTprev);
+	    EstimatedRTO=EstimatedRTTprev+4*EstimatedDEVprev;
+            g_info("\n\n\nRTT %6f seconds",EstimatedRTT);
+            g_info("RTO %6f seconds",EstimatedRTO);
+	    EstimatedDEVprev=EstimatedDEV;
+	    EstimatedRTTprev=EstimatedRTT;
 
-
-            SendTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollMessage->Session,NowTrollMessage->SeqNum,EstimatedRTT);
+	    //send timer request with calculated RTO
+            SendTimerRequest(TimerDriverSocket,&TimerAddr,NowTrollMessage->Session,NowTrollMessage->SeqNum,EstimatedRTO);
             g_debug("Delay 1000usec to avoid blocking local udp transmission...");
             usleep(1000);
             // sleep(1);
@@ -586,6 +628,7 @@ ERRCODE SolveSendCallback(){
     return 0;
 }
 
+//print entire tcpd status
 ERRCODE PrintTcpdStatus(){
     g_debug("Printing Tcpd Status...");
     g_info("##########");
@@ -619,14 +662,6 @@ ERRCODE PrintTcpdStatus(){
     while (g_hash_table_iter_next (&ConnectedSocketIter, (void *)&ConnectedSocketSocketFD, (void *)&TmpConnectedSocket))
     {
         g_info("###ConnectedSocket:%d Session:%u Base:%u Packages:%u Pending:%u",TmpConnectedSocket->SocketFD,TmpConnectedSocket->Session,TmpConnectedSocket->Base,g_list_length(TmpConnectedSocket->Packages),g_list_length(TmpConnectedSocket->PendingPackages));
-        // for(l=TmpConnectedSocket->Packages;l!=NULL;l=l->next){
-        //     struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
-        //     g_info("#### Package %u waiting for response",TmpTrollMessage->SeqNum);
-        // }
-        // for(l=TmpConnectedSocket->PendingPackages;l!=NULL;l=l->next){
-        //     struct TrollMessageStruct *TmpTrollMessage=(struct TrollMessageStruct *)(l->data);
-        //     g_info("#### Package %u waiting pending for send",TmpTrollMessage->SeqNum);
-        // }
     }
     g_info("#Tcpd Status done.");
     g_info("##########");
@@ -634,6 +669,7 @@ ERRCODE PrintTcpdStatus(){
     return 0;
 }
 
+//Socket function
 ERRCODE tcpd_SOCKET(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_info("SOCKET");
 
@@ -654,11 +690,11 @@ ERRCODE tcpd_SOCKET(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
+//Bind function
 ERRCODE tcpd_BIND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     /* fetch the oringin arguments of BIND calls */
     int sockfd;
     struct sockaddr_in addr;
-    // socklen_t addrlen;
 
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
@@ -676,16 +712,7 @@ ERRCODE tcpd_BIND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     }
     bcopy(buf,(char *)&addr,sizeof(struct sockaddr_in));
 
-    // bzero(buf, sizeof(socklen_t));
-    // FrontAddrLength= sizeof(FrontAddr);
-    // if(recvfrom(sock, buf, sizeof(socklen_t),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
-    //     perror("error receiving BIND addrlen"); 
-    //     exit(4);
-    // }
-    // bcopy(buf,(char *)&addrlen,sizeof(socklen_t));
-
     g_info("BIND sockfd:%d, addr.port:%hu, addr.in_addr:%s",sockfd,ntohs(addr.sin_port),inet_ntoa(addr.sin_addr));
-    // g_info("SOCKET sockfd:%d, addr.port:%hu, addr.in_addr:%lu, addrlen:%d",sockfd,addr.sin_port,addr.sin_addr,addrlen);
 
     /* bind the socket with name provided */
     int ret_bind=bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
@@ -709,10 +736,11 @@ ERRCODE tcpd_BIND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
+//Accept function
 ERRCODE tcpd_ACCEPT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Received ACCEPT message ...");
     int AcceptSocketFD;
-
+    //get accept socket
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(int),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -726,6 +754,7 @@ ERRCODE tcpd_ACCEPT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Adding ACCEPT request to binded socket list ...");
     ERRCODE AcceptResult=-1;
     uint i;
+    //accept binded sockets
     for(i=0;i<BindedSockets->len;i++){
         struct BindedSocketStruct *TmpBindedSocket=g_array_index(BindedSockets,struct BindedSocketStruct *,i);
         if(TmpBindedSocket->SocketFD!=AcceptSocketFD){
@@ -743,6 +772,7 @@ ERRCODE tcpd_ACCEPT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     if(AcceptResult==-1){
         g_message("No binded socket found");
     }
+    //send accept result back
     if(AcceptResult!=0){
         g_debug("Sending back error ACCEPT");
         int AcceptRet=-1;
@@ -757,14 +787,14 @@ ERRCODE tcpd_ACCEPT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
+//Receive function
 ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Received RECV message ...");
     /* fetch the oringin arguments of RECV calls */
     int sockfd;
-    // void *buf;
     size_t len;
-    // int flags;
 
+    //get recv sockfd
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(int),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -782,7 +812,6 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     bcopy(buf,(char *)&len,sizeof(size_t));
 
     g_info("RECV sockfd:%d, len:%zu",sockfd,len);
-    // g_info("RECV sockfd:%d, len:%zu, flags:%d",sockfd,len,flags);
 
     /* request too large */
 
@@ -825,13 +854,14 @@ ERRCODE tcpd_RECV(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
+//connect function
 ERRCODE tcpd_CONNECT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Received CONNECT message ...");
     g_debug("Fetching origin arguments of CONNECT ...");
     int sockfd;
     struct sockaddr_in addr;
-    // socklen_t addrlen;
 
+    //receive connect sockft
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(int),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -873,15 +903,13 @@ ERRCODE tcpd_CONNECT(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     return 0;
 }
 
-
+//send function
 ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
     g_debug("Received SEND message");
     g_debug("Fetching origin arguments of SEND ...");
     int sockfd;
-    // void *buf;
     size_t len;
-    // int flags;
-
+    //receive send sockfd
     bzero(buf, sizeof(int));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(int),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -889,7 +917,7 @@ ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
         exit(4);
     }
     bcopy(buf,(char *)&sockfd,sizeof(int));
-
+    //get send len
     bzero(buf, sizeof(size_t));
     FrontAddrLength= sizeof(FrontAddr);
     if(recvfrom(sock, buf, sizeof(size_t),MSG_WAITALL, (struct sockaddr *)&FrontAddr, &FrontAddrLength) < 0) {
@@ -897,7 +925,7 @@ ERRCODE tcpd_SEND(struct sockaddr_in FrontAddr,socklen_t FrontAddrLength){
         exit(4);
     }
     bcopy(buf,(char *)&len,sizeof(size_t));
-
+    //fetch data
     g_debug("Fetching send data ...");
     if(BUF_LEN<len){
         perror("error request length larger than buffer");

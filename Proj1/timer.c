@@ -65,6 +65,7 @@ int main()
             SleepTime.tv_usec=(unsigned)(SEC2USEC*(((struct TimerNodeStruct *)(TimerFirst->data))->RemainSeconds-SleepTime.tv_sec));
         }
         g_debug("Waiting incomming requests for %zu .%06zu seconds ...",SleepTime.tv_sec,SleepTime.tv_usec);
+	//wait for timer of first node or request received
         int ready=select(TimerSocket+1,&TimerSocketSet,NULL,NULL,&SleepTime);
         g_debug("Request received or time expired");
         g_debug("Updating timer list ...");
@@ -83,6 +84,7 @@ int main()
                 g_debug("Fetching request ...");
                 recvfrom(TimerSocket,(void *)&NowRequest,sizeof(NowRequest),MSG_WAITALL,(struct sockaddr *)RequestAddr,&RequestAddrLength);
                 g_info("Request fetched Type:%d SeqNum:%d, Seconds:%0.2lf",NowRequest.Type,NowRequest.SeqNum,NowRequest.Seconds);
+		//see if request was to add or remove node
                 switch(NowRequest.Type){
                     case TimerRequestStart:{
                         InsertRequest(&NowRequest,(struct sockaddr *)RequestAddr);
@@ -105,6 +107,7 @@ int main()
     return 0;
 }
 
+//insert timer node
 ERRCODE InsertRequest(const struct TimerRequestStruct * NowRequest, struct sockaddr *RequestAddr){
     g_debug("Call Insert Request ...");
     g_assert(NowRequest);
@@ -144,6 +147,7 @@ ERRCODE InsertRequest(const struct TimerRequestStruct * NowRequest, struct socka
     return 0;
 }
 
+//cancel timer request
 ERRCODE CancelRequest(const struct TimerRequestStruct * NowRequest){
     g_debug("Call Cancel Request ...");
     g_assert(NowRequest);
@@ -172,6 +176,7 @@ ERRCODE CancelRequest(const struct TimerRequestStruct * NowRequest){
     return 0;
 }
 
+//update list with past time
 ERRCODE UpdateTimerList(){
     g_debug("Call Update Timer List ...");
     g_assert(LastSystemTime.tv_sec!=0);
@@ -203,6 +208,7 @@ ERRCODE UpdateTimerList(){
     return 0;
 }
 
+//call back tcpd when timer expires
 ERRCODE SendCallbacks(){
     g_debug("Call Send Callbacks ...");
     g_debug("Searching Timer List ...");
@@ -229,6 +235,7 @@ ERRCODE SendCallbacks(){
     return 0;
 }
 
+//display list for testing
 ERRCODE DisplayTimerList(){
     g_debug("Call Display Timer List ...");
     GList *l=TimerList;
