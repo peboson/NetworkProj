@@ -28,7 +28,6 @@ int
 main (int argc, char *argv[])
 {
   bool verbose = true;
-//  uint32_t nCsma = 5;
 
   CommandLine cmd;
   cmd.AddValue ("verbose", "Tell echo applications to log if true", verbose);
@@ -42,19 +41,8 @@ main (int argc, char *argv[])
 export NS_LOG=UdpEchoClientApplication=level_all;
     }
 
-//  NodeContainer p2pNodes;
-//  p2pNodes.Create (2);
-
   NodeContainer csmaNodes;
-//  csmaNodes.Add (p2pNodes.Get (1));
   csmaNodes.Create (4);
-
-//  PointToPointHelper pointToPoint;
-//  pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
-//  pointToPoint.SetChannelAttribute ("Delay", StringValue ("2ms"));
-
-//  NetDeviceContainer p2pDevices;
-//  p2pDevices = pointToPoint.Install (p2pNodes);
 
   CsmaHelper csma;
   csma.SetChannelAttribute ("DataRate", StringValue ("1Mbps"));
@@ -68,10 +56,7 @@ export NS_LOG=UdpEchoClientApplication=level_all;
 
   Ipv4AddressHelper address;
   address.SetBase ("10.1.1.0", "255.255.255.0");
-//  Ipv4InterfaceContainer p2pInterfaces;
-//  p2pInterfaces = address.Assign (p2pDevices);
 
-//  address.SetBase ("10.1.2.0", "255.255.255.0");
   Ipv4InterfaceContainer csmaInterfaces;
   csmaInterfaces = address.Assign (csmaDevices);
 
