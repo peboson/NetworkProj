@@ -215,7 +215,7 @@ main (int argc, char *argv[])
   p2pDevicesAB.Get(1)->SetAttribute ("ReceiveErrorModel", PointerValue (em));
   p2pDevicesCD.Get(1)->SetAttribute ("ReceiveErrorModel", PointerValue (em));
   //BER of B-C is 10^-5
-  em->SetAttribute ("ErrorRate", DoubleValue (0.0001));
+  em->SetAttribute ("ErrorRate", DoubleValue (0.0005));
   p2pDevicesBC.Get(1)->SetAttribute ("ReceiveErrorModel", PointerValue (em));
 
   //place nodes on the stack
@@ -255,7 +255,7 @@ main (int argc, char *argv[])
 
   //set up ASCII trace file for congestion window trace in tcpchain.cwnd
   AsciiTraceHelper asciiTraceHelper;
-  Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("tcpchain.cwnd");
+  Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("tcpchainWorse.cwnd");
   ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
 
   //set up pcap file to trace packets
