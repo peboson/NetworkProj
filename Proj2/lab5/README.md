@@ -10,7 +10,7 @@ Jason Song
 
 	cp tcpchain.cc /scratch/tcpchain.cc
 	./waf
-	./waf --run "scratch/tcpchain true"
+	./waf --run "scratch/tcpchain --errorRate=.00001 --outputCwnd=tcp.cwnd --verbose=true"
 
 ##Description
 
@@ -29,3 +29,7 @@ Each node creates a pcap log which can be opened with "/usr/sbin/tcpdump -tt -nn
 cwnd log info can be found in tcpchain.cwnd
 
 ##Graph cwnd
+
+gnuplot contains commands to graph cwnd data in one file called cwnd.png and can be ran with
+
+gnuplot gnuplot
