@@ -180,9 +180,13 @@ RxDrop (Ptr<PcapFileWrapper> file, Ptr<const Packet> p)
 int
 main (int argc, char *argv[])
 {
-  //add command line bool to ask whether or not ot log level info
+  //add command line bool to ask whether or not ot log level info, and BER of inner connection BC with output cwnd file name
   bool verbose = true;
+  double ber;
+  std::string cwndFile;
   CommandLine cmd;
+  cmd.AddValue ("errorRate", "Tell echo applications to log if true", ber);
+  cmd.AddValue ("outputCwnd", "Tell echo applications to log if true", cwndFile);
   cmd.AddValue ("verbose", "Tell echo applications to log if true", verbose);
   cmd.Parse (argc,argv);
   //if cmd line gives true then log level info
@@ -214,8 +218,8 @@ main (int argc, char *argv[])
   em->SetAttribute ("ErrorRate", DoubleValue (0.00001));
   p2pDevicesAB.Get(1)->SetAttribute ("ReceiveErrorModel", PointerValue (em));
   p2pDevicesCD.Get(1)->SetAttribute ("ReceiveErrorModel", PointerValue (em));
-  //BER of B-C is 10^-5
-  em->SetAttribute ("ErrorRate", DoubleValue (0.0005));
+  //BER of B-C is 10^-5 or 5 times worse (value input by user
+  em->SetAttribute ("ErrorRate", DoubleValue (ber));
   p2pDevicesBC.Get(1)->SetAttribute ("ReceiveErrorModel", PointerValue (em));
 
   //place nodes on the stack
@@ -255,7 +259,7 @@ main (int argc, char *argv[])
 
   //set up ASCII trace file for congestion window trace in tcpchain.cwnd
   AsciiTraceHelper asciiTraceHelper;
-  Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("tcpchainWorse.cwnd");
+  Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream (cwndFile);
   ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
 
   //set up pcap file to trace packets
