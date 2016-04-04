@@ -215,7 +215,7 @@ main (int argc, char *argv[])
   //introduce error into channel at a given rate
   Ptr<RateErrorModel> em = CreateObject<RateErrorModel> ();
   //BER of A-B and C-D is 10^-6
-  em->SetAttribute ("ErrorRate", DoubleValue (0.00001));
+  em->SetAttribute ("ErrorRate", DoubleValue (0.000001));
   p2pDevicesAB.Get(1)->SetAttribute ("ReceiveErrorModel", PointerValue (em));
   p2pDevicesCD.Get(1)->SetAttribute ("ReceiveErrorModel", PointerValue (em));
   //BER of B-C is 10^-5 or 5 times worse (value input by user
@@ -245,17 +245,17 @@ main (int argc, char *argv[])
   PacketSinkHelper packetSinkHelper ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), sinkPort));
   ApplicationContainer sinkApps = packetSinkHelper.Install (p2pNodes.Get (nP2pNodes-1));
   sinkApps.Start (Seconds (0.));
-  sinkApps.Stop (Seconds (20.));
+  sinkApps.Stop (Seconds (200.));
 
   //create socket on first node (A)
   Ptr<Socket> ns3TcpSocket = Socket::CreateSocket (p2pNodes.Get (0), TcpSocketFactory::GetTypeId ());
 
   //start application on node A with data rate of 1Mbps
   Ptr<MyApp> app = CreateObject<MyApp> ();
-  app->Setup (ns3TcpSocket, sinkAddress, 1040, 1000, DataRate ("1Mbps"));
+  app->Setup (ns3TcpSocket, sinkAddress, 1040, 1000, DataRate (".1Mbps"));
   p2pNodes.Get (0)->AddApplication (app);
   app->SetStartTime (Seconds (1.));
-  app->SetStopTime (Seconds (20.));
+  app->SetStopTime (Seconds (200.));
 
   //set up ASCII trace file for congestion window trace in tcpchain.cwnd
   AsciiTraceHelper asciiTraceHelper;
@@ -269,6 +269,8 @@ main (int argc, char *argv[])
 
   // make routing table 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+
+  pointToPoint.EnablePcapAll ("tcpchain");
 
   //run simulation
   Simulator::Run ();
