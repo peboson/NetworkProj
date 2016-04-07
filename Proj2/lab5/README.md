@@ -11,6 +11,8 @@ Jason Song
 	cp tcpchain.cc /scratch/tcpchain.cc
 	./waf
 	./waf --run "scratch/tcpchain --errorRate=.00001 --outputCwnd=tcp.cwnd --verbose=true"
+	./waf --run "scratch/tcpchain --errorRate=.00005 --outputCwnd=tcpWorse.cwnd --verbose=true"
+	gnuplot gnuplot
 
 ##Description
 
@@ -30,6 +32,8 @@ cwnd log info can be found in tcpchain.cwnd
 
 ##Graph cwnd
 
-gnuplot contains commands to graph cwnd data in one file called cwnd.png and can be ran with
+gnuplot contains commands to graph cwnd data in one file called cwnd.png and can be called with
 
 gnuplot gnuplot
+
+
