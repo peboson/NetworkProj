@@ -24,6 +24,8 @@ static uint32_t currentTxBytes = 0;
 //perform series of 1000 byte writes
 static const uint32_t writeSize = 1000;
 uint8_t data[writeSize];
+bool slowStart=true;
+uint32_t lastIncrease=536;
 
 // Default Network Topology
 //
@@ -49,8 +51,24 @@ void WriteUntilBufferFull (Ptr<Socket>, uint32_t);
 static void
 CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
 {
+  //slow start if cwnd is at 0
+  if(newCwnd==0){
+	slowStart=true;
+  }
+  else if(slowStart==true){
+    if(newCwnd<oldCwnd+536){
+	slowStart=false;
+    }
+  }  
+
+  //if slow start trace in column 1 else place in column 2
+  if(slowStart==true){
+  	*stream->GetStream () << Simulator::Now ().GetSeconds () << ",\t" << newCwnd << ",\t" << std::endl;
+  }else{
+	*stream->GetStream () << Simulator::Now ().GetSeconds () << ",\t" << ",\t" << newCwnd << std::endl;
+  }
+
   NS_LOG_UNCOND (Simulator::Now ().GetSeconds () << "\t" << newCwnd);
-  *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" << oldCwnd << "\t" << newCwnd << std::endl;
 }
 
 //show where packets are dropped to log and file stream
@@ -138,6 +156,7 @@ main (int argc, char *argv[])
   //trace congestion window in tcpchain.cwnd
   AsciiTraceHelper asciiTraceHelper;
   Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream (cwndFile);
+  *stream->GetStream () << Simulator::Now ().GetSeconds () << ",\t" << 0 << ",\t" << std::endl;
   localSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
 
   //set up pcap file to trace packets
