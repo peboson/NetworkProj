@@ -20,7 +20,7 @@ using namespace ns3;
 NS_LOG_COMPONENT_DEFINE ("Proj2");
 
 //number of bytes to send each simulation
-static const uint32_t totalTxBytes = 100000;
+static const uint32_t totalTxBytes = 1000000;
 static uint32_t currentTxBytes = 0;
 //perform series of 1000 byte writes
 static const uint32_t writeSize = 1000;
@@ -53,7 +53,7 @@ static void
 CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
 {
   //slow start if cwnd is at 0
-  if(newCwnd==0){
+  if(newCwnd<=536){
 	slowStart=true;
   }
   else if(slowStart==true){
@@ -168,7 +168,6 @@ main (int argc, char *argv[])
   //trace congestion window in tcpchain.cwnd
   AsciiTraceHelper asciiTraceHelper;
   Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream (cwndFile);
-  *stream->GetStream () << Simulator::Now ().GetSeconds () << ",\t" << 0 << ",\t" << std::endl;
   localSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
 
   //set up pcap file to trace packets
